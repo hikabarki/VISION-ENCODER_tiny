@@ -1,6 +1,6 @@
 # Keural Vision Encoder
 
-A from-scratch vision encoder designed for the LLM era. Plug-in compatible with any LLM via a clean output contract.
+Keural vision encoder designed for the LLM era. Plug-in compatible with any LLM via a clean output contract.
 
 > **Status: V0.1-preview.** Architecture is complete and validated by 300+ unit tests. Full training runs on CC3M + CC12M (~6.9M samples) on a single RTX 5090 in 24–36 hours.
 
