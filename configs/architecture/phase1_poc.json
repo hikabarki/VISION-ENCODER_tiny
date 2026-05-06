@@ -1,0 +1,115 @@
+{
+  "phase": 1,
+  "name": "keural-tiny-poc",
+  "description": "Proof-of-concept model. Validates architecture correctness and full training pipeline on a single RTX 5090. Not intended for production use.",
+
+  "parameters": {
+    "total": "24.7M",
+    "breakdown": {
+      "stem": "~0.4M",
+      "saliency_head": "~0.1M",
+      "atb_tokenizer": "~0.2M",
+      "spatial_transformer": "~23.5M",
+      "level_embeddings": "<0.1M",
+      "pool_token": "<0.1M"
+    }
+  },
+
+  "stem": {
+    "channels": [64, 128, 256, 384],
+    "kernel_size": 3,
+    "activation": "gelu",
+    "stride_per_layer": 2,
+    "total_stride": 16,
+    "note": "stem.channels[-1] must equal spatial.embed_dim"
+  },
+
+  "saliency": {
+    "hidden_channels": 96,
+    "output": "sigmoid map (B, 1, H/16, W/16)"
+  },
+
+  "tokenizer": {
+    "default_token_budget": 256,
+    "max_token_budget": 1024,
+    "budget_split": {
+      "global": 0.05,
+      "region": 0.25,
+      "detail": 0.70
+    },
+    "budget_floors": {
+      "global": 4,
+      "region": 8,
+      "detail": 0
+    },
+    "saliency_smooth_kernel": { "region": 5, "detail": 3 },
+    "nms_radius": { "region": 2, "detail": 1 },
+    "gumbel_temperature_start": 1.0,
+    "gumbel_temperature_end": 0.1,
+    "temperature_anneal_steps": 10000,
+    "warmup_steps_fixed_grid": 5000,
+    "roi_align_size": 2
+  },
+
+  "spatial_transformer": {
+    "embed_dim": 384,
+    "depth": 12,
+    "num_heads": 6,
+    "head_dim": 64,
+    "mlp_ratio": 4,
+    "mlp_type": "SwiGLU",
+    "norm_type": "RMSNorm",
+    "norm_eps": 1e-6,
+    "positional_encoding": "2D RoPE",
+    "rope_base": 10000.0,
+    "use_pool_token": true
+  },
+
+  "loss": {
+    "primary": "sigmoid_siglip",
+    "lambda_hct": 1.0,
+    "lambda_sal": 1.0,
+    "hct_alpha": 0.5,
+    "saliency_beta": 0.01,
+    "learnable_temperature_init": 2.30,
+    "learnable_bias_init": -10.0
+  },
+
+  "training": {
+    "precision": "bfloat16",
+    "gradient_checkpointing": true,
+    "optimizer": "adamw",
+    "betas": [0.9, 0.95],
+    "weight_decay": 0.05,
+    "lr": 1e-3,
+    "lr_schedule": "cosine_with_warmup",
+    "warmup_steps": 2000,
+    "max_steps": 75000,
+    "batch_size_per_device": 256,
+    "gradient_accumulation": 4,
+    "effective_batch_size": 1024,
+    "seed": 42
+  },
+
+  "data": {
+    "datasets": ["CC3M", "CC12M (partial)"],
+    "total_samples": "~6.9M",
+    "image_buckets": [[224, 224], [256, 256], [320, 320]],
+    "text_encoder": "sentence-transformers/all-MiniLM-L6-v2 (frozen)",
+    "num_workers": 2
+  },
+
+  "hardware": {
+    "target_gpu": "NVIDIA RTX 5090",
+    "vram_required": "~12-16 GB",
+    "estimated_training_time": "24-36 hours",
+    "gpus": 1
+  },
+
+  "output": {
+    "token_sequence": "(B, N, 384)",
+    "pooled_vector": "(B, 384)",
+    "level_ids": "(B, N) — 0=global, 1=region, 2=detail",
+    "spatial_metadata": "(B, N, 4) — cx, cy, w, h normalized"
+  }
+}

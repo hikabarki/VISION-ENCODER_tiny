@@ -1,0 +1,132 @@
+{
+  "phase": 2,
+  "name": "keural-mid",
+  "description": "Mid-level model. Production-grade quality targeting CLIP ViT-L/14 performance class. Trained on large-scale curated data. Suitable for downstream fine-tuning and VLM integration.",
+
+  "parameters": {
+    "total": "~250M",
+    "breakdown": {
+      "stem": "~3M",
+      "saliency_head": "~0.6M",
+      "atb_tokenizer": "~1M",
+      "spatial_transformer": "~244M",
+      "level_embeddings": "<0.1M",
+      "pool_token": "<0.1M"
+    }
+  },
+
+  "stem": {
+    "channels": [128, 256, 512, 768],
+    "kernel_size": 3,
+    "activation": "gelu",
+    "stride_per_layer": 2,
+    "total_stride": 16,
+    "note": "stem.channels[-1] must equal spatial.embed_dim"
+  },
+
+  "saliency": {
+    "hidden_channels": 192,
+    "output": "sigmoid map (B, 1, H/16, W/16)"
+  },
+
+  "tokenizer": {
+    "default_token_budget": 512,
+    "max_token_budget": 2048,
+    "budget_split": {
+      "global": 0.05,
+      "region": 0.25,
+      "detail": 0.70
+    },
+    "budget_floors": {
+      "global": 8,
+      "region": 16,
+      "detail": 0
+    },
+    "saliency_smooth_kernel": { "region": 7, "detail": 3 },
+    "nms_radius": { "region": 3, "detail": 1 },
+    "gumbel_temperature_start": 1.0,
+    "gumbel_temperature_end": 0.05,
+    "temperature_anneal_steps": 50000,
+    "warmup_steps_fixed_grid": 10000,
+    "roi_align_size": 4
+  },
+
+  "spatial_transformer": {
+    "embed_dim": 768,
+    "depth": 24,
+    "num_heads": 12,
+    "head_dim": 64,
+    "mlp_ratio": 4,
+    "mlp_type": "SwiGLU",
+    "norm_type": "RMSNorm",
+    "norm_eps": 1e-6,
+    "positional_encoding": "2D RoPE",
+    "rope_base": 10000.0,
+    "use_pool_token": true
+  },
+
+  "loss": {
+    "primary": "sigmoid_siglip",
+    "lambda_hct": 1.0,
+    "lambda_sal": 0.5,
+    "hct_alpha": 0.5,
+    "saliency_beta": 0.005,
+    "learnable_temperature_init": 2.30,
+    "learnable_bias_init": -10.0
+  },
+
+  "training": {
+    "precision": "bfloat16",
+    "gradient_checkpointing": true,
+    "optimizer": "adamw",
+    "betas": [0.9, 0.95],
+    "weight_decay": 0.05,
+    "lr": 5e-4,
+    "lr_schedule": "cosine_with_warmup",
+    "warmup_steps": 10000,
+    "max_steps": 500000,
+    "batch_size_per_device": 128,
+    "gradient_accumulation": 4,
+    "effective_batch_size": 8192,
+    "seed": 42
+  },
+
+  "data": {
+    "datasets": ["CC3M", "CC12M", "LAION-400M subset", "curated web data"],
+    "total_samples": "~400M",
+    "image_buckets": [
+      [224, 224], [256, 256], [320, 320],
+      [384, 384], [448, 448], [512, 512]
+    ],
+    "text_encoder": "openai/clip-vit-large-patch14 text tower (frozen) or trained jointly",
+    "num_workers": 16,
+    "deduplication": true,
+    "nsfw_filtering": true,
+    "quality_scoring": true
+  },
+
+  "hardware": {
+    "target_gpu": "8× H100 80GB or 8× A100 80GB",
+    "vram_required": "~60 GB per GPU",
+    "estimated_training_time": "7-14 days",
+    "gpus": 8,
+    "multi_node": false
+  },
+
+  "output": {
+    "token_sequence": "(B, N, 768)",
+    "pooled_vector": "(B, 768)",
+    "level_ids": "(B, N) — 0=global, 1=region, 2=detail",
+    "spatial_metadata": "(B, N, 4) — cx, cy, w, h normalized"
+  },
+
+  "improvements_over_phase1": [
+    "2× embed_dim (384→768) — richer token representations",
+    "2× depth (12→24) — deeper reasoning over token hierarchy",
+    "2× default token budget (256→512) — finer spatial detail",
+    "Larger roi_align_size (2→4) — better region feature extraction",
+    "Trained on 400M vs 6.9M samples — much stronger generalization",
+    "Data cleaning pipeline — dedup + NSFW + quality scoring",
+    "Larger image buckets (up to 512×512) — high-res understanding"
+  ]
+}

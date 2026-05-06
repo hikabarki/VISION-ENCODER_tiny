@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Datasets and large binary data
+data/cc3m/
+data/cc12m/
+data/indexes/*.tsv
+data/indexes/*.cache.pkl
+
+# Training outputs and checkpoints
+outputs/
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# HuggingFace download cache
+data/**/.cache/
+
+# Incomplete downloads
+*.incomplete

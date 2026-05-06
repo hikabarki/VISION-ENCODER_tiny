@@ -1,0 +1,191 @@
+{
+  "phase": 3,
+  "name": "keural-commercial",
+  "description": "Full commercial model. Targets state-of-the-art vision encoding quality, competitive with or exceeding SigLIP-SO400M and EVA-CLIP-18B in HCT-relevant benchmarks. Designed for integration into production VLMs, document understanding, and high-resolution visual reasoning systems.",
+
+  "parameters": {
+    "total": "~1.1B",
+    "breakdown": {
+      "stem": "~8M",
+      "saliency_head": "~2M",
+      "atb_tokenizer": "~3M",
+      "spatial_transformer": "~1.08B",
+      "level_embeddings": "<0.1M",
+      "pool_token": "<0.1M"
+    }
+  },
+
+  "stem": {
+    "channels": [128, 256, 512, 1024],
+    "kernel_size": 3,
+    "activation": "gelu",
+    "stride_per_layer": 2,
+    "total_stride": 16,
+    "note": "stem.channels[-1] must equal spatial.embed_dim"
+  },
+
+  "saliency": {
+    "hidden_channels": 256,
+    "output": "sigmoid map (B, 1, H/16, W/16)"
+  },
+
+  "tokenizer": {
+    "default_token_budget": 1024,
+    "max_token_budget": 4096,
+    "budget_split": {
+      "global": 0.05,
+      "region": 0.20,
+      "detail": 0.75
+    },
+    "budget_floors": {
+      "global": 8,
+      "region": 32,
+      "detail": 0
+    },
+    "saliency_smooth_kernel": { "region": 7, "detail": 5 },
+    "nms_radius": { "region": 3, "detail": 2 },
+    "gumbel_temperature_start": 1.0,
+    "gumbel_temperature_end": 0.02,
+    "temperature_anneal_steps": 100000,
+    "warmup_steps_fixed_grid": 20000,
+    "roi_align_size": 4
+  },
+
+  "spatial_transformer": {
+    "embed_dim": 1024,
+    "depth": 48,
+    "num_heads": 16,
+    "head_dim": 64,
+    "mlp_ratio": 4,
+    "mlp_type": "SwiGLU",
+    "norm_type": "RMSNorm",
+    "norm_eps": 1e-6,
+    "positional_encoding": "2D RoPE",
+    "rope_base": 10000.0,
+    "use_pool_token": true,
+    "attention": "flash_attention_2"
+  },
+
+  "loss": {
+    "primary": "sigmoid_siglip",
+    "lambda_hct": 1.0,
+    "lambda_sal": 0.25,
+    "hct_alpha": 0.5,
+    "saliency_beta": 0.001,
+    "learnable_temperature_init": 2.30,
+    "learnable_bias_init": -10.0,
+    "additional": [
+      "masked_image_modeling (optional, stage 2 fine-tune)",
+      "grounding_loss (optional, region-level fine-tune)"
+    ]
+  },
+
+  "training": {
+    "stage_1_pretraining": {
+      "description": "Large-scale contrastive pretraining",
+      "precision": "bfloat16",
+      "gradient_checkpointing": true,
+      "optimizer": "adamw",
+      "betas": [0.9, 0.95],
+      "weight_decay": 0.05,
+      "lr": 2e-4,
+      "lr_schedule": "cosine_with_warmup",
+      "warmup_steps": 20000,
+      "max_steps": 2000000,
+      "batch_size_per_device": 64,
+      "gradient_accumulation": 2,
+      "effective_batch_size": 32768,
+      "seed": 42
+    },
+    "stage_2_finetuning": {
+      "description": "High-resolution fine-tuning on curated data",
+      "lr": 2e-5,
+      "max_steps": 200000,
+      "effective_batch_size": 8192,
+      "image_buckets_extended": [
+        [448, 448], [512, 512], [640, 640], [768, 768], [1024, 1024]
+      ]
+    }
+  },
+
+  "data": {
+    "stage_1": {
+      "datasets": [
+        "LAION-2B (filtered)",
+        "CC3M", "CC12M",
+        "COYO-700M",
+        "DataComp-1B",
+        "licensed commercial image-text pairs"
+      ],
+      "total_samples": "~2B",
+      "deduplication": true,
+      "nsfw_filtering": true,
+      "quality_scoring": true,
+      "aesthetic_filtering": true,
+      "min_resolution": 256,
+      "min_caption_length": 5
+    },
+    "stage_2": {
+      "datasets": [
+        "high-quality curated subset",
+        "document images",
+        "chart/diagram data",
+        "grounding datasets (GRIT, RefCOCO)"
+      ],
+      "total_samples": "~50M"
+    },
+    "image_buckets": [
+      [224, 224], [256, 256], [320, 320],
+      [384, 384], [448, 448], [512, 512],
+      [640, 640], [768, 768], [1024, 1024]
+    ],
+    "text_encoder": "trained jointly with vision encoder",
+    "num_workers": 32
+  },
+
+  "hardware": {
+    "stage_1": {
+      "target_gpu": "64× H100 80GB SXM5",
+      "vram_required": "~75 GB per GPU",
+      "estimated_training_time": "30-60 days",
+      "gpus": 64,
+      "multi_node": true,
+      "interconnect": "NVLink + InfiniBand"
+    },
+    "stage_2": {
+      "target_gpu": "16× H100 80GB SXM5",
+      "estimated_training_time": "7-14 days",
+      "gpus": 16
+    }
+  },
+
+  "output": {
+    "token_sequence": "(B, N, 1024)",
+    "pooled_vector": "(B, 1024)",
+    "level_ids": "(B, N) — 0=global, 1=region, 2=detail",
+    "spatial_metadata": "(B, N, 4) — cx, cy, w, h normalized"
+  },
+
+  "target_benchmarks": {
+    "imagenet_zero_shot": ">82%",
+    "coco_retrieval_r1": ">78%",
+    "flickr30k_retrieval_r1": ">97%",
+    "pope_hallucination": ">87%",
+    "docvqa": ">85%",
+    "note": "Targets are aspirational — actual results depend on data quality and fine-tuning"
+  },
+
+  "improvements_over_phase2": [
+    "1.33× embed_dim (768→1024) — richer per-token representation",
+    "2× depth (24→48) — much deeper reasoning over the token hierarchy",
+    "2× default token budget (512→1024) — fine-grained spatial understanding",
+    "Max token budget 4096 — supports document/chart/high-res inputs",
+    "FlashAttention-2 for memory-efficient attention at scale",
+    "Two-stage training: large pretraining + high-res fine-tuning",
+    "Trained on ~2B samples with full quality pipeline",
+    "Up to 1024×1024 image resolution support",
+    "Grounding loss optional fine-tune for spatial reasoning tasks"
+  ],
+
+  "licensing_note": "Commercial release requires proprietary license (ELv2 or BSL) — Apache 2.0 irrevocable patent grant is incompatible with patent enforcement on novel ATB/HCT mechanisms."
+}
