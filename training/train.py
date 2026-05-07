@@ -31,12 +31,15 @@ import signal
 import sys
 import time
 import traceback
+import warnings
 from dataclasses import asdict
 from pathlib import Path
 
 import psutil
 import pynvml
 import torch
+
+warnings.filterwarnings("ignore", category=UserWarning, module="PIL")
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
