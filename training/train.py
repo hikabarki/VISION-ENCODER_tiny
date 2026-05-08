@@ -97,15 +97,20 @@ def get_system_stats() -> dict:
     return stats
 
 
-def _rotate_checkpoints(output_dir: Path, keep: int = 5) -> None:
-    """Delete oldest step checkpoints, keeping only the `keep` most recent."""
+def _rotate_checkpoints(output_dir: Path, best_step: int | None = None) -> None:
+    """Keep only the latest checkpoint and the best checkpoint. Delete all others."""
     ckpts = sorted(
-        output_dir.glob("checkpoint-*"),
-        key=lambda p: int(p.name.split("-")[-1]) if p.name.split("-")[-1].isdigit() else 0,
+        output_dir.glob("checkpoint-[0-9]*"),
+        key=lambda p: int(p.name.split("-")[-1]),
     )
-    for old in ckpts[:-keep]:
-        shutil.rmtree(old, ignore_errors=True)
-        print(f"[train] Removed old checkpoint: {old.name}")
+    if not ckpts:
+        return
+    latest = ckpts[-1]
+    for ckpt in ckpts:
+        keep = ckpt == latest or (best_step is not None and ckpt.name == f"checkpoint-{best_step}")
+        if not keep:
+            shutil.rmtree(ckpt, ignore_errors=True)
+            print(f"[train] Removed checkpoint: {ckpt.name}")
 
 
 def _save_training_state(
@@ -412,6 +417,9 @@ def train(
     # --- Resume from latest checkpoint if one exists
     step = _resume_from_checkpoint(output_dir, model, optimizer, scaler)
 
+    best_loss = float("inf")
+    best_step = None
+
     accum_count = 0
     optimizer.zero_grad(set_to_none=True)
     loader_iter = iter(loader)
@@ -550,8 +558,13 @@ def train(
                     ckpt_dir = output_dir / f"checkpoint-{step}"
                     model.save_pretrained(ckpt_dir)
                     _save_training_state(ckpt_dir, step, optimizer, scaler)
+                    current_loss = loss_out.total.item()
+                    if current_loss < best_loss:
+                        best_loss = current_loss
+                        best_step = step
+                        print(f"[train] New best checkpoint at step {step} (loss={best_loss:.4f})")
                     print(f"[train] Saved checkpoint to {ckpt_dir}")
-                    _rotate_checkpoints(output_dir, keep=5)
+                    _rotate_checkpoints(output_dir, best_step=best_step)
 
                 step += 1
 

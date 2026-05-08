@@ -25,8 +25,19 @@ MAX_RESTARTS=10       # stop watchdog after this many consecutive crashes
 # Pass through any extra args (--max-steps, --batch-size, etc.)
 EXTRA_ARGS="$@"
 
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 mkdir -p "$WORK_DIR/logs"
 cd "$WORK_DIR" || exit 1
+
+# Prevent multiple watchdog instances
+LOCK_FILE="logs/watchdog.lock"
+if [ -f "$LOCK_FILE" ] && kill -0 $(cat "$LOCK_FILE") 2>/dev/null; then
+    echo "[watchdog] Already running (PID $(cat $LOCK_FILE)). Exiting."
+    exit 1
+fi
+echo $$ > "$LOCK_FILE"
+trap "rm -f $LOCK_FILE" EXIT
 
 log() {
     echo "[watchdog] $(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$WATCHDOG_LOG"
