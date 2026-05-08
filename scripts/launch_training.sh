@@ -25,8 +25,6 @@ MAX_RESTARTS=10       # stop watchdog after this many consecutive crashes
 # Pass through any extra args (--max-steps, --batch-size, etc.)
 EXTRA_ARGS="$@"
 
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
 mkdir -p "$WORK_DIR/logs"
 cd "$WORK_DIR" || exit 1
 
