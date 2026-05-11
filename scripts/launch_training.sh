@@ -34,6 +34,11 @@ if [ -f "$LOCK_FILE" ] && kill -0 $(cat "$LOCK_FILE") 2>/dev/null; then
     echo "[watchdog] Already running (PID $(cat $LOCK_FILE)). Exiting."
     exit 1
 fi
+# Also abort if a training process is already running (catches orphans)
+if pgrep -u "$(whoami)" -f "training.train" > /dev/null 2>&1; then
+    echo "[watchdog] Training process already running. Exiting to avoid duplicate."
+    exit 1
+fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f $LOCK_FILE" EXIT
 
