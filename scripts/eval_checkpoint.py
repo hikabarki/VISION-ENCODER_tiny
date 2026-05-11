@@ -23,10 +23,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--checkpoint", default="outputs/run/checkpoint-6000")
 args = parser.parse_args()
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 # ── load models ───────────────────────────────────────────────────────────────
 print(f"Loading vision encoder from: {args.checkpoint}")
-vision = AutoModel.from_pretrained(args.checkpoint, dtype=torch.float32)
-vision.eval()
+# Use bfloat16 on CUDA (matches training dtype); float32 on CPU
+load_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+vision = AutoModel.from_pretrained(args.checkpoint, dtype=load_dtype)
+vision = vision.to(device).eval()
 # pool_metadata was saved as non-persistent in older checkpoints — ensure correct values
 vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
 
@@ -119,11 +123,11 @@ print("="*60)
 images, captions = zip(*DUMMY_PAIRS)
 
 # Encode images
-pixel_values = torch.stack([transform(img) for img in images]).float()  # ensure float32
+pixel_values = torch.stack([transform(img) for img in images]).to(device, dtype=load_dtype)
 print(f"pixel_values dtype={pixel_values.dtype}, shape={pixel_values.shape}")
 with torch.no_grad():
     out = vision(pixel_values, token_budget=256)
-    img_embeds = out.pooled  # (N, 384)
+    img_embeds = out.pooled.float().cpu()  # (N, 384) — cast to float32 for similarity
     print(f"pooled raw norm (pre-normalize): {img_embeds.norm(dim=-1).tolist()}")
     if img_embeds.isnan().any():
         print("NaN detected in pooled output — running per-module debug...")
@@ -161,5 +165,5 @@ with torch.no_grad():
     print(f"  Global tokens: {(ids==0).sum().item()}")
     print(f"  Region tokens: {(ids==1).sum().item()}")
     print(f"  Detail tokens: {(ids==2).sum().item()}")
-    print(f"  Pooled norm:   {out2.pooled.norm().item():.4f}  (should be ~1.0 after training)")
+    print(f"  Pooled norm:   {out2.pooled.float().norm().item():.4f}  (should be ~1.0 after training)")
 print("="*60)

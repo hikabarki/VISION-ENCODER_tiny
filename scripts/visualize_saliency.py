@@ -41,7 +41,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ── load model ────────────────────────────────────────────────────────────────
 print(f"Loading vision encoder from: {args.checkpoint}")
-vision = AutoModel.from_pretrained(args.checkpoint, dtype=torch.float32)
+# Use bfloat16 on CUDA (matches training dtype); float32 on CPU
+load_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+vision = AutoModel.from_pretrained(args.checkpoint, dtype=load_dtype)
 vision = vision.to(device).eval()
 # pool_metadata was saved as non-persistent in older checkpoints — ensure correct values
 vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
@@ -84,7 +86,7 @@ for img_path in image_paths:
     print(f"\n  Processing: {img_path}")
 
     orig_img = Image.open(img_path).convert("RGB")
-    pv = transform(orig_img).unsqueeze(0).float().to(device)  # (1, 3, 256, 256)
+    pv = transform(orig_img).unsqueeze(0).to(device, dtype=load_dtype)  # (1, 3, 256, 256)
 
     with torch.no_grad():
         # Get saliency map directly from tokenizer sub-modules

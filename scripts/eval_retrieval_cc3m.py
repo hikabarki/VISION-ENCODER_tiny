@@ -36,7 +36,9 @@ print(f"Device: {device}")
 
 # ── load models ───────────────────────────────────────────────────────────────
 print(f"\nLoading vision encoder from: {args.checkpoint}")
-vision = AutoModel.from_pretrained(args.checkpoint, dtype=torch.float32)
+# Use bfloat16 on CUDA (matches training dtype); float32 on CPU
+load_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+vision = AutoModel.from_pretrained(args.checkpoint, dtype=load_dtype)
 vision = vision.to(device).eval()
 # pool_metadata was saved as non-persistent in older checkpoints — ensure correct values
 vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
@@ -110,11 +112,11 @@ N = len(images)
 # ── encode images (batched) ───────────────────────────────────────────────────
 print(f"\nEncoding {N} images (batch={args.batch_size})...")
 all_img_embeds = []
-pixel_tensors = [transform(img).float() for img in images]
+pixel_tensors = [transform(img) for img in images]
 
 with torch.no_grad():
     for i in range(0, N, args.batch_size):
-        batch = torch.stack(pixel_tensors[i:i + args.batch_size]).to(device)
+        batch = torch.stack(pixel_tensors[i:i + args.batch_size]).to(device, dtype=load_dtype)
         out = vision(batch, token_budget=args.budget)
         emb = out.pooled.float()  # (B, D)
         all_img_embeds.append(emb.cpu())
