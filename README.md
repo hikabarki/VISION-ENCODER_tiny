@@ -450,8 +450,7 @@ Code: MIT. Training data licenses (CC3M, CC12M) apply to weights produced by thi
 
 ```bibtex
 @misc{keural_vision_encoder_2026,
-  title  = {Keural Vision Encoder: Adaptive Token Budget Tokenization
-            with Hierarchical Concept Output for LLM-Native Visual Perception},
+  title  = {Keural Vision Encoder: Content-Adaptive Vision Encoding via Saliency-Guided Token Budgets},
   year   = {2026},
   note   = {V0.1-preview},
 }
