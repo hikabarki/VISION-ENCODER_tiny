@@ -69,7 +69,7 @@ class KeuralVisionEncoder(nn.Module):
         # treated like a global token for RoPE purposes.
         # We register it as a buffer so it lives on the right device.
         pool_meta = torch.tensor([[0.5, 0.5, 1.0, 1.0]], dtype=torch.float32)
-        self.register_buffer("pool_metadata", pool_meta, persistent=False)
+        self.register_buffer("pool_metadata", pool_meta, persistent=True)
 
         # Stage D: spatial transformer blocks
         self.blocks = nn.ModuleList(

@@ -25,8 +25,19 @@ args = parser.parse_args()
 
 # ── load models ───────────────────────────────────────────────────────────────
 print(f"Loading vision encoder from: {args.checkpoint}")
-vision = AutoModel.from_pretrained(args.checkpoint)
+vision = AutoModel.from_pretrained(args.checkpoint, dtype=torch.float32)
 vision.eval()
+# pool_metadata was saved as non-persistent in older checkpoints — ensure correct values
+vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
+
+# Verify dtype and check for NaN in weights
+param_dtypes = {p.dtype for p in vision.parameters()}
+print(f"Parameter dtypes after load: {param_dtypes}")
+nan_params = [(n, p) for n, p in vision.named_parameters() if p.isnan().any() or p.isinf().any()]
+if nan_params:
+    print(f"WARNING: NaN/Inf found in {len(nan_params)} parameters: {[n for n, _ in nan_params[:5]]}")
+else:
+    print("Weights OK — no NaN or Inf in parameters")
 
 print("Loading text encoder...")
 text_enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
@@ -36,6 +47,47 @@ transform = T.Compose([
     T.ToTensor(),
     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
+
+# ── NaN debugger ─────────────────────────────────────────────────────────────
+def _dbg(model, pv):
+    """Trace NaN through the encoder stage by stage."""
+    enc = model.encoder
+    tok = enc.tokenizer
+    print("  [dbg] tracing NaN source...")
+    with torch.no_grad():
+        stem = tok.stem(pv)
+        print(f"  stem:    nan={stem.isnan().any().item()}, norm={stem.norm():.2f}")
+        sal = tok.saliency(stem)
+        print(f"  saliency:nan={sal.isnan().any().item()}, range=[{sal.min():.4f},{sal.max():.4f}]")
+        from tokenizer.atb_tokenizer import split_budget
+        K_g, K_r, K_d = split_budget(256, tok.config.tokenizer.budget_split, tok.config.tokenizer.budget_floors)
+        g = tok.global_constructor(stem, K_g=K_g)
+        print(f"  global:  nan={g.isnan().any().item()}, norm={g.norm():.2f}")
+        from tokenizer.region_sampler import RegionSampler
+        picks = tok.region_sampler(sal, K=K_r, gumbel_temperature=0.0, training=False)
+        r = tok.region_constructor(stem, picks)
+        print(f"  region:  nan={r.isnan().any().item()}, norm={r.norm():.2f}")
+        picks_d = tok.detail_sampler(sal, K=K_d, gumbel_temperature=0.0, training=False)
+        d = tok.detail_constructor(stem, picks_d)
+        print(f"  detail:  nan={d.isnan().any().item()}, norm={d.norm():.2f}")
+        # Run transformer blocks with simplified metadata
+        tokens = torch.cat([g, r, d], dim=1)
+        level_ids = torch.zeros(1, K_g + K_r + K_d, dtype=torch.int64)
+        level_ids[:, :K_g] = 0; level_ids[:, K_g:K_g+K_r] = 1; level_ids[:, K_g+K_r:] = 2
+        level_emb = enc.level_embeddings[level_ids]
+        x = tokens + level_emb
+        pool_tok = enc.pool_token.expand(1, 1, x.shape[-1]).to(x.dtype)
+        x = torch.cat([pool_tok, x], dim=1)
+        print(f"  pre-blocks: nan={x.isnan().any().item()}, norm={x.norm():.2f}")
+        # Use full-image metadata for all tokens (approximation for debugging)
+        meta_full = enc.pool_metadata.unsqueeze(0).expand(1, x.shape[1], 4)
+        for i, blk in enumerate(enc.blocks):
+            mask = torch.ones(1, x.shape[1], dtype=torch.int64)
+            x = blk(x, meta_full, mask)
+            if x.isnan().any():
+                print(f"  block {i}: NaN introduced here!")
+                break
+            print(f"  block {i}: ok, norm={x.norm():.2f}")
 
 # ── test pairs (image_path, caption) ─────────────────────────────────────────
 # Replace these with real images from your machine
@@ -67,9 +119,15 @@ print("="*60)
 images, captions = zip(*DUMMY_PAIRS)
 
 # Encode images
-pixel_values = torch.stack([transform(img) for img in images])
+pixel_values = torch.stack([transform(img) for img in images]).float()  # ensure float32
+print(f"pixel_values dtype={pixel_values.dtype}, shape={pixel_values.shape}")
 with torch.no_grad():
-    img_embeds = vision(pixel_values, token_budget=256).pooled  # (N, 384)
+    out = vision(pixel_values, token_budget=256)
+    img_embeds = out.pooled  # (N, 384)
+    print(f"pooled raw norm (pre-normalize): {img_embeds.norm(dim=-1).tolist()}")
+    if img_embeds.isnan().any():
+        print("NaN detected in pooled output — running per-module debug...")
+        _dbg(vision, pixel_values[:1])
     img_embeds = F.normalize(img_embeds, dim=-1)
 
 # Encode texts
@@ -98,10 +156,10 @@ else:
 print("\n" + "="*60)
 print("Token budget stats (budget=256):")
 with torch.no_grad():
-    out = vision(pixel_values[:1], token_budget=256)
-    ids = out.level_ids[0]
+    out2 = vision(pixel_values[:1], token_budget=256)
+    ids = out2.level_ids[0]
     print(f"  Global tokens: {(ids==0).sum().item()}")
     print(f"  Region tokens: {(ids==1).sum().item()}")
     print(f"  Detail tokens: {(ids==2).sum().item()}")
-    print(f"  Pooled norm:   {out.pooled.norm().item():.4f}  (should be ~1.0 after training)")
+    print(f"  Pooled norm:   {out2.pooled.norm().item():.4f}  (should be ~1.0 after training)")
 print("="*60)
