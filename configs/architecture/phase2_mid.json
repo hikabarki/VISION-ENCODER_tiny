@@ -4,7 +4,7 @@
   "description": "Mid-level model. Production-grade quality targeting CLIP ViT-L/14 performance class. Trained on large-scale curated data. Suitable for downstream fine-tuning and VLM integration.",
 
   "parameters": {
-    "total": "~250M",
+    "total": "~183M",
     "breakdown": {
       "stem": "~3M",
       "saliency_head": "~0.6M",
