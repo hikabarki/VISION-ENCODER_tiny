@@ -136,29 +136,39 @@ def hct_global_text_loss(
     return sigmoid_siglip_loss(image_embeds, text_normed, logit_scale, logit_bias)
 
 
-def saliency_variance_regularizer(saliency_map: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
-    """Penalize flat saliency maps.
+def saliency_variance_regularizer(
+    saliency_map: torch.Tensor,
+    eps: float = 1e-3,
+    lambda_smooth: float = 4.0,
+) -> torch.Tensor:
+    """Combined anti-collapse + spatial smoothness regularizer.
 
-    Computes spatial variance of the saliency map per batch item, then
-    penalizes the inverse: low variance → high loss.
+    L = 1/(var(S) + eps) + lambda_smooth * TV_L2(S)
 
-    L = beta * mean_b 1 / (var_b(saliency) + eps)
-
-    With beta applied externally, this returns just the inverse-variance term.
+    - Anti-collapse: low spatial variance → high loss (prevents uniform saliency)
+    - Smoothness: high spatial gradient → high loss (prevents salt-and-pepper noise)
+    - Optimum: smooth spatial blobs with meaningful variance (subject/background separation)
 
     Parameters
     ----------
-    saliency_map : Tensor of shape (B, 1, h, w)
-    eps : float — added to the variance to bound the loss when variance is low.
+    saliency_map : Tensor of shape (B, 1, h, w), values in [0, 1]
+    eps : float — floor on variance to prevent division by zero.
+    lambda_smooth : float — weight on the TV smoothness term relative to anti-collapse.
 
     Returns
     -------
-    Scalar loss.
+    Scalar loss (beta applied externally by KeuralLoss).
     """
-    B = saliency_map.shape[0]
     flat = saliency_map.flatten(1)  # (B, h*w)
     variance = flat.var(dim=1, unbiased=False)  # (B,)
-    return (1.0 / (variance + eps)).mean()
+    anti_collapse = (1.0 / (variance + eps)).mean()
+
+    # Total variation L2: mean squared horizontal + vertical finite differences
+    dx = saliency_map[:, :, :, 1:] - saliency_map[:, :, :, :-1]  # (B,1,h,w-1)
+    dy = saliency_map[:, :, 1:, :] - saliency_map[:, :, :-1, :]  # (B,1,h-1,w)
+    tv = dx.pow(2).mean() + dy.pow(2).mean()
+
+    return anti_collapse + lambda_smooth * tv
 
 
 class KeuralLoss(nn.Module):
@@ -243,9 +253,11 @@ class KeuralLoss(nn.Module):
             encoder_output, text_embeds, self.logit_scale, self.logit_bias
         )
 
-        # 3) Saliency variance regularizer
+        # 3) Saliency regularizer (anti-collapse + smoothness)
         if saliency_map is not None:
-            saliency = saliency_variance_regularizer(saliency_map)
+            saliency = saliency_variance_regularizer(
+                saliency_map, lambda_smooth=self.config.saliency_lambda_smooth
+            )
         else:
             saliency = torch.tensor(0.0, device=primary.device, dtype=primary.dtype)
 

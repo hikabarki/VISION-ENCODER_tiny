@@ -132,7 +132,7 @@ class TestHCTGlobalText:
 
 class TestSaliencyRegularizer:
     def test_flat_map_high_loss(self):
-        """A constant saliency map should give a HIGH loss."""
+        """A constant saliency map (zero variance) should give a HIGH loss."""
         flat = torch.full((1, 1, 14, 14), 0.5)
         loss_flat = saliency_variance_regularizer(flat)
 
@@ -140,6 +140,18 @@ class TestSaliencyRegularizer:
         loss_diverse = saliency_variance_regularizer(diverse)
 
         assert loss_flat > loss_diverse
+
+    def test_smooth_region_beats_checkerboard(self):
+        """Same variance, lower TV → lower loss. Smooth regions beat salt-and-pepper."""
+        h, w = 16, 16
+        # Checkerboard: alternating 0/1 — high variance, high TV (worst case)
+        idx = torch.arange(h * w).view(h, w)
+        checker = ((idx // w + idx % w) % 2).float().view(1, 1, h, w)
+        # Two-region: left half=0, right half=1 — same variance, minimal TV
+        two_region = torch.zeros(1, 1, h, w)
+        two_region[:, :, :, w // 2 :] = 1.0
+        # Both have the same variance (~0.25), but two_region has much lower TV
+        assert saliency_variance_regularizer(two_region) < saliency_variance_regularizer(checker)
 
     def test_gradient_flows(self):
         sal = torch.rand(2, 1, 14, 14, requires_grad=True)
@@ -151,9 +163,9 @@ class TestSaliencyRegularizer:
     def test_eps_prevents_divergence(self):
         """Even a perfectly flat map should give a finite (large but bounded) loss."""
         flat = torch.full((1, 1, 4, 4), 0.5)
-        loss = saliency_variance_regularizer(flat, eps=1e-3)
+        loss = saliency_variance_regularizer(flat, eps=1e-3, lambda_smooth=0.0)
         assert torch.isfinite(loss)
-        assert loss > 100  # large but bounded
+        assert loss > 100  # large but bounded (TV term is zero for flat, so inverse-var dominates)
 
 
 # ----- KeuralLoss -----

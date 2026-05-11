@@ -246,6 +246,7 @@ class LossConfig:
     primary: str = "sigmoid_siglip"
     hct_alpha: float = 0.5
     saliency_beta: float = 0.01
+    saliency_lambda_smooth: float = 4.0
     lambda_hct: float = 1.0
     lambda_sal: float = 1.0
     learnable_temperature_init: float = 2.30  # log(10)
