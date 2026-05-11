@@ -87,7 +87,7 @@
     "max_steps": 500000,
     "batch_size_per_device": 128,
     "gradient_accumulation": 4,
-    "effective_batch_size": 8192,
+    "effective_batch_size": 4096,
     "seed": 42
   },
 
