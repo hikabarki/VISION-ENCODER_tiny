@@ -125,7 +125,8 @@ images, captions = zip(*DUMMY_PAIRS)
 # Encode images
 pixel_values = torch.stack([transform(img) for img in images]).to(device, dtype=load_dtype)
 print(f"pixel_values dtype={pixel_values.dtype}, shape={pixel_values.shape}")
-with torch.no_grad():
+autocast_ctx = torch.autocast(device_type=device, dtype=load_dtype) if device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
+with torch.no_grad(), autocast_ctx:
     out = vision(pixel_values, token_budget=256)
     img_embeds = out.pooled.float().cpu()  # (N, 384) — cast to float32 for similarity
     print(f"pooled raw norm (pre-normalize): {img_embeds.norm(dim=-1).tolist()}")
@@ -159,7 +160,7 @@ else:
 
 print("\n" + "="*60)
 print("Token budget stats (budget=256):")
-with torch.no_grad():
+with torch.no_grad(), autocast_ctx:
     out2 = vision(pixel_values[:1], token_budget=256)
     ids = out2.level_ids[0]
     print(f"  Global tokens: {(ids==0).sum().item()}")

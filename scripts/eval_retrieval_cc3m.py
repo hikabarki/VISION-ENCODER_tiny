@@ -114,7 +114,8 @@ print(f"\nEncoding {N} images (batch={args.batch_size})...")
 all_img_embeds = []
 pixel_tensors = [transform(img) for img in images]
 
-with torch.no_grad():
+autocast_ctx = torch.autocast(device_type=device, dtype=load_dtype) if device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
+with torch.no_grad(), autocast_ctx:
     for i in range(0, N, args.batch_size):
         batch = torch.stack(pixel_tensors[i:i + args.batch_size]).to(device, dtype=load_dtype)
         out = vision(batch, token_budget=args.budget)

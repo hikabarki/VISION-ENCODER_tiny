@@ -88,7 +88,8 @@ for img_path in image_paths:
     orig_img = Image.open(img_path).convert("RGB")
     pv = transform(orig_img).unsqueeze(0).to(device, dtype=load_dtype)  # (1, 3, 256, 256)
 
-    with torch.no_grad():
+    autocast_ctx = torch.autocast(device_type=device, dtype=load_dtype) if device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
+    with torch.no_grad(), autocast_ctx:
         # Get saliency map directly from tokenizer sub-modules
         stem_feat = tok.stem(pv)                    # (1, D, h, w)
         sal_map = tok.saliency(stem_feat)            # (1, 1, h, w)  in (0,1)
