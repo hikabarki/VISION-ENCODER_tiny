@@ -45,7 +45,7 @@ vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
 print(f"  Parameters: {sum(p.numel() for p in vision.parameters()):,}")
 
 print("Loading text encoder (MiniLM)...")
-text_enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+text_enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
 
 transform = T.Compose([
     T.Resize((256, 256)),

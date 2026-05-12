@@ -44,7 +44,7 @@ else:
     print("Weights OK — no NaN or Inf in parameters")
 
 print("Loading text encoder...")
-text_enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+text_enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
 
 transform = T.Compose([
     T.Resize((256, 256)),
@@ -119,8 +119,14 @@ print("TEST: Image-Text Similarity Matrix")
 print("Each row = one image. Diagonal should be HIGHEST score.")
 print("="*60)
 
-# Use dummy pairs (always works without real images)
-images, captions = zip(*DUMMY_PAIRS)
+# Use real test images from test_images/ directory
+import glob as _glob
+_paths = sorted(_glob.glob("test_images/*.jpg") + _glob.glob("test_images/*.png"))
+_real = [(Image.open(p).convert("RGB"), p.split("/")[-1].split(".")[0]) for p in _paths]
+if _real:
+    images, captions = zip(*_real)
+else:
+    images, captions = zip(*DUMMY_PAIRS)
 
 # Encode images
 pixel_values = torch.stack([transform(img) for img in images]).to(device, dtype=load_dtype)

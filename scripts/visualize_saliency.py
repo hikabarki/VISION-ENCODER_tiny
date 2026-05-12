@@ -100,7 +100,7 @@ for img_path in image_paths:
         spatial_meta = out.spatial_metadata[0]      # (N, 4): cx, cy, w, h  [0..1]
         level_ids    = out.level_ids[0]             # (N,)
 
-    sal_np = sal_map[0, 0].cpu().numpy()            # (h, w)  in (0,1)
+    sal_np = sal_map[0, 0].float().cpu().numpy()    # (h, w)  in (0,1)
 
     # ── figure: 3 panels ──────────────────────────────────────────────────────
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
