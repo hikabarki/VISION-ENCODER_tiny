@@ -128,8 +128,8 @@ loss:
 ```
 
 ### Scripts to build (before May 17)
-- [ ] `scripts/train_projector.py` — projector training loop
-- [ ] `configs/projector_align.yaml` — config file
+- [x] `scripts/train_projector.py` — projector training loop
+- [x] `configs/projector_align.yaml` — config file
 
 ### Expected outcome
 - Model generates basic image captions
@@ -267,7 +267,7 @@ poc/
 │   └── vlm/checkpoint/              ← Phase 2B full VLM
 ├── configs/
 │   ├── keural_tiny_poc.yaml         ← Phase 1 ✅
-│   ├── projector_align.yaml         ← Phase 2 (to create)
+│   ├── projector_align.yaml         ← Phase 2 ✅
 │   └── vlm_instruct.yaml            ← Phase 2B (to create)
 └── scripts/
     ├── train.py                     ← Phase 1 ✅
@@ -275,7 +275,7 @@ poc/
     ├── eval_retrieval_cc3m.py       ← Phase 1 eval ✅
     ├── visualize_saliency.py        ← Phase 1 viz ✅
     ├── gui_eval.py                  ← GUI tool ✅
-    ├── train_projector.py           ← Phase 2 (to build)
+    ├── train_projector.py           ← Phase 2 ✅
     ├── train_vlm.py                 ← Phase 2B (to build)
     └── demo_vlm.py                  ← June 10 demo (to build)
 ```

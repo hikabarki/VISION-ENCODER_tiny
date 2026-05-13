@@ -110,18 +110,23 @@ images, captions = zip(*pairs)
 N = len(images)
 
 # ── encode images (batched) ───────────────────────────────────────────────────
-print(f"\nEncoding {N} images (batch={args.batch_size})...")
+# CPU batching causes NaN in attention on degenerate image combinations — use batch=1 on CPU
+batch_size = args.batch_size if device == "cuda" else 1
+if device == "cpu" and args.batch_size > 1:
+    print(f"  Note: forcing batch_size=1 on CPU to avoid NaN in attention")
+
+print(f"\nEncoding {N} images (batch={batch_size})...")
 all_img_embeds = []
 pixel_tensors = [transform(img) for img in images]
 
 autocast_ctx = torch.autocast(device_type=device, dtype=load_dtype) if device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
 with torch.no_grad(), autocast_ctx:
-    for i in range(0, N, args.batch_size):
-        batch = torch.stack(pixel_tensors[i:i + args.batch_size]).to(device, dtype=load_dtype)
+    for i in range(0, N, batch_size):
+        batch = torch.stack(pixel_tensors[i:i + batch_size]).to(device, dtype=load_dtype)
         out = vision(batch, token_budget=args.budget)
         emb = out.pooled.float()  # (B, D)
         all_img_embeds.append(emb.cpu())
-        if (i // args.batch_size) % 5 == 0:
+        if (i // batch_size) % 5 == 0:
             print(f"  [{i+len(batch)}/{N}] pooled norm: {emb.norm(dim=-1).mean():.4f}")
 
 img_embeds = torch.cat(all_img_embeds, dim=0)  # (N, D)
@@ -154,8 +159,22 @@ def recall_at_k(sim_matrix, k_values=(1, 5, 10), direction="i2t"):
         results[k] = hits / N * 100
     return results
 
+def median_and_mean_rank(sim_matrix, direction="i2t"):
+    """Compute MedR and MeanR. Lower is better (rank 1 = perfect)."""
+    N = sim_matrix.shape[0]
+    if direction == "t2i":
+        sim_matrix = sim_matrix.T
+    ranks = []
+    for i in range(N):
+        sorted_idx = np.argsort(sim_matrix[i])[::-1]
+        rank = int(np.where(sorted_idx == i)[0][0]) + 1  # 1-indexed
+        ranks.append(rank)
+    return float(np.median(ranks)), float(np.mean(ranks))
+
 i2t = recall_at_k(sim, direction="i2t")
 t2i = recall_at_k(sim, direction="t2i")
+i2t_medr, i2t_meanr = median_and_mean_rank(sim, direction="i2t")
+t2i_medr, t2i_meanr = median_and_mean_rank(sim, direction="t2i")
 
 print(f"\n{'='*55}")
 print(f"  CC3M Retrieval Evaluation  |  N={N} pairs")
@@ -164,14 +183,22 @@ print(f"  {'Metric':<25} {'Image→Text':>12} {'Text→Image':>12}")
 print(f"  {'-'*50}")
 for k in (1, 5, 10):
     print(f"  R@{k:<23} {i2t[k]:>11.1f}% {t2i[k]:>11.1f}%")
+print(f"  {'-'*50}")
+print(f"  {'MedR':<25} {i2t_medr:>11.1f}  {t2i_medr:>11.1f}")
+print(f"  {'MeanR':<25} {i2t_meanr:>11.1f}  {t2i_meanr:>11.1f}")
 print(f"{'='*55}")
 
 random_r1 = 1 / N * 100
-print(f"\n  Random-chance R@1 baseline: {random_r1:.2f}%")
-if i2t[1] > random_r1 * 3:
+random_r5 = 5 / N * 100
+random_medr = (N + 1) / 2
+print(f"\n  Random-chance R@1:  {random_r1:.2f}%  |  R@5: {random_r5:.2f}%  |  MedR: {random_medr:.1f}")
+# Use R@5 average as primary signal (more stable than R@1 on small N)
+avg_r5 = (i2t[5] + t2i[5]) / 2
+avg_medr = (i2t_medr + t2i_medr) / 2
+if avg_r5 > random_r5 * 2 or avg_medr < random_medr * 0.7:
     print("  ✓ Model significantly above random — alignment is learning")
-elif i2t[1] > random_r1:
-    print("  ~ Model slightly above random — early-stage learning")
+elif avg_r5 > random_r5 or avg_medr < random_medr:
+    print("  ~ Model above random — alignment in progress (normal before step 60k)")
 else:
     print("  ✗ Model at or below random — check loss convergence")
 

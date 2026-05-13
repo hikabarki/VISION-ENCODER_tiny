@@ -1,0 +1,39 @@
+# Phase 2 — Projector Alignment Training Config
+# Trains LevelAwareProjector (384→2048→4096) + LLM LoRA adapters on CC3M captions.
+# Vision encoder (checkpoint-75000) and LLM backbone are frozen.
+
+vision_ckpt: outputs/run/checkpoint-75000
+llm_name: mkd-hossain/keural-14.8b-base
+output_dir: outputs/projector
+tar_dir: data/cc3m
+
+training:
+  max_steps: 10000
+  batch_size: 4           # micro-batch per grad-accum step
+  grad_accum: 8           # effective batch = 32
+  lr: 1.0e-4
+  warmup_steps: 500
+  weight_decay: 0.05
+  save_every: 1000
+  log_every: 10
+  token_budget: 256       # vision tokens per image (matches Phase 1 eval)
+  max_caption_length: 128 # max tokenized caption length
+
+projector:
+  hidden_dim: 2048        # LevelAwareProjector: 384 → 2048 → 4096 (~18M params)
+
+lora:
+  r: 16
+  alpha: 32
+  target_modules:
+    - q_proj
+    - v_proj
+  dropout: 0.0
+
+# VRAM estimate (RTX 5090, 32GB):
+#   keural-14.8b-base (4-bit NF4 double-quant): ~7.4 GB
+#   Vision encoder (bf16, frozen):              ~50 MB
+#   LevelAwareProjector (bf16):                 ~50 MB
+#   LoRA adapters (r=16, q+v):                  ~80 MB
+#   Activations + gradients:                   ~4-6 GB
+#   Total estimated:                           ~12-14 GB  (well within 32GB)
