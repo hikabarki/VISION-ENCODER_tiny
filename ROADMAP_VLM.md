@@ -1,96 +1,107 @@
-# Keural VLM — Full Alignment Roadmap
+# Keural VLM — Phase 2 Plan & Roadmap
 
-**Goal:** Image → KeuralVisionEncoder → LevelAwareProjector → keural-alpha → Text
-**Current state:** Pipeline wired ✅ | Vision encoder 8% trained | Projector untrained | LLM not aligned
-
----
-
-## Overview
-
-```
-PHASE 1  Vision encoder training          ██░░░░░░░░  8%    → May 16-17
-PHASE 2  Projector alignment              ░░░░░░░░░░  0%    → May 18-19
-PHASE 3  LLM instruction fine-tuning      ░░░░░░░░░░  0%    → May 20-24
-PHASE 4  Full VLM evaluation & release    ░░░░░░░░░░  0%    → May 25
-```
+**Goal:** Image → Keural Vision Encoder → Projector → keural-14.8b-base → Text response  
+**Demo target:** June 10, 2026 — POC presentation  
+**Last updated:** 2026-05-13
 
 ---
 
-## Phase 1 — Finish Vision Encoder Training
-**Status:** In progress | **ETA:** ~May 16-17, 2026
+## Current Status
 
-### What to do
-- [ ] Resume training: `bash scripts/restart_training.sh`
-- [ ] Let it run to step 75,000
-- [ ] Apply ETA formula fix at next clean restart
-- [ ] Monitor loss — should reach ~3.0–4.0 total by step 75,000
+```
+PHASE 1  Vision encoder training (CC3M+CC12M)    ████████░░  58%   → ~May 16–17
+PHASE 2  Projector training (frozen LLM)         ░░░░░░░░░░   0%   → ~May 17–27
+PHASE 3  Document understanding (Docling data)   ░░░░░░░░░░   0%   → After June 10
+```
 
-### Success criteria
-- Total loss < 4.5 at step 75,000
-- Primary (SigLIP) loss < 2.5
-- HCT loss < 2.5
-- Saliency loss stable ~4.0
+---
 
-### Expected loss trajectory
-| Step | Total Loss |
-|------|------------|
-| 6,000 (now) | ~6.75 |
-| 20,000 | ~4.5–5.0 |
-| 50,000 | ~3.5–4.0 |
-| 75,000 | ~3.0–3.5 |
+## Phase 1 — Vision Encoder Training (In Progress)
+
+**Status:** 58.7% complete | **ETA:** ~May 16–17, 2026
+
+### Current metrics (checkpoint-44000)
+
+| Metric | Value | Random baseline |
+|---|---|---|
+| Step | 44,000 / 75,000 | — |
+| Primary loss (SigLIP) | ~1.97 | — |
+| CC3M R@1 i2t (200 pairs) | 1.0% | 0.50% |
+| CC3M R@1 t2i (200 pairs) | 2.0% | 0.50% |
+| CC3M R@5 i2t (200 pairs) | 4.0% | 2.50% |
+| CC3M MedR i2t (200 pairs) | 97.0 | 100.5 |
+| Pooled norm | ~4.48 | target ~1.0 |
+
+### Success criteria at step 75,000
+- Primary loss < 1.5
+- CC3M R@1 (200 pairs) > 8%
+- CC3M MedR < 70
+- Pooled norm < 2.0
+- Saliency maps show clear foreground focus
 
 ### On completion
 ```bash
-# Run full benchmark evaluation
-python3.10 scripts/eval_checkpoint.py --checkpoint outputs/run/checkpoint-75000
+# Full retrieval eval
+cd /home/mkd-s002/vision-encoder/poc
+python3.10 scripts/eval_retrieval_cc3m.py --checkpoint outputs/run/checkpoint-75000 --n-pairs 200
 
-# Upload final weights to HuggingFace
-python3.10 -c "
-from huggingface_hub import HfApi
-api = HfApi()
-api.upload_folder(
-    folder_path='outputs/run/checkpoint-75000',
-    repo_id='mkd-hika/keural-vision-encoder-poc',
-    token='YOUR_HF_TOKEN'
-)
-"
+# Saliency visualization
+python3.10 scripts/visualize_saliency.py --checkpoint outputs/run/checkpoint-75000 --image-dir test_images --out-dir outputs/saliency_viz_75k
+
+# Push to HuggingFace
+# (use HF token)
 ```
 
 ---
 
-## Phase 2 — Projector Alignment Training
-**Status:** Not started | **ETA:** ~1–2 days | **Starts after:** Phase 1
+## Phase 2 — Projector Training (Starts ~May 17)
 
-### What it does
-Trains `LevelAwareProjector` (384 → 2048) to map vision tokens into keural-alpha's
-embedding space. The LLM is **fully frozen** during this phase — only the projector trains.
+**Status:** Not started | **ETA:** ~10 days | **Target:** May 27
 
 ### Architecture
+
 ```
-Image → [Frozen Vision Encoder] → tokens (B, 256, 384)
-                                      ↓
-                              [LevelAwareProjector]  ← trains here
-                                      ↓
-                              projected (B, 256, 2048)
-                                      ↓
-                           [Frozen keural-alpha] → caption loss
+Image (256×256)
+      ↓
+Keural Vision Encoder — FROZEN (24.7M params)
+      ↓
+256 tokens × 384-dim
+      ↓
+Projector MLP — TRAINS HERE
+  Linear(384 → 2048) → GELU → Linear(2048 → 4096)
+      ↓
+256 visual tokens × 4096-dim  (Mixtral hidden dim)
+      ↓
+keural-14.8b-base — FROZEN + 4-bit QLoRA
+      ↓
+Text response
 ```
 
-### Training data needed
-~500K–1M image-caption pairs. Options:
-- CC3M (already have) — 3M pairs, use a subset
-- CC12M (already have) — 12M pairs, use a subset
-- LAION-400M subset (download separately)
+### VRAM plan (RTX 5090, 32GB)
 
-**Recommended:** use existing CC3M + CC12M data (no new downloads needed)
+| Component | Full bfloat16 | 4-bit QLoRA |
+|---|---|---|
+| keural-14.8b-base | ~29.6 GB | ~7.4 GB |
+| Vision encoder | ~50 MB | ~50 MB |
+| Projector | ~50 MB | ~50 MB |
+| Activations + gradients | ~2 GB | ~4 GB |
+| **Total** | **~32 GB (too tight)** | **~12 GB (safe)** |
 
-### Config (create: `configs/projector_align.yaml`)
+**Must use 4-bit QLoRA** — full bfloat16 does not fit.
+
+### Training data
+Use existing CC3M data (no new downloads needed):
+- 500K image-caption pairs from CC3M tars in `data/cc3m/`
+- Format: `(image, "Caption: <text>")`
+- Simple next-token prediction loss on the caption
+
+### Config (`configs/projector_align.yaml`)
 ```yaml
 training:
   lr: 1.0e-4
   max_steps: 10000
-  batch_size_per_device: 128
-  gradient_accumulation: 8        # effective batch = 1024
+  batch_size_per_device: 32
+  gradient_accumulation: 8        # effective batch = 256
   warmup_steps: 500
   optimizer: adamw
   weight_decay: 0.05
@@ -98,50 +109,61 @@ training:
 
 model:
   vision_ckpt: outputs/run/checkpoint-75000
-  llm_name: mkd-ai/keural-alpha
-  projector: level_aware           # LevelAwareProjector
-  freeze_vision: true              # frozen
-  freeze_llm: true                 # frozen
+  llm_name: mkd-hossain/keural-14.8b-base
+  llm_quantization: 4bit           # QLoRA — required for 32GB GPU
+  freeze_vision: true
+  freeze_llm: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_target_modules: ["q_proj", "v_proj"]
+
+projector:
+  type: mlp2x
+  input_dim: 384
+  hidden_dim: 2048
+  output_dim: 4096                 # Mixtral hidden dim
 
 loss:
-  type: next_token_prediction      # standard causal LM loss on captions
+  type: next_token_prediction
 ```
 
+### Scripts to build (before May 17)
+- [ ] `scripts/train_projector.py` — projector training loop
+- [ ] `configs/projector_align.yaml` — config file
+
 ### Expected outcome
-- Projector learns to translate visual features into LLM-compatible space
-- LLM starts producing image-relevant captions (basic, not instruction-tuned yet)
+- Model generates basic image captions
+- "What is this?" → "This is a cat sitting on a sofa"
+- Not instruction-tuned yet — raw caption generation
 
 ### Estimated time
-~1 day on RTX 5090
+~7–10 days on RTX 5090 (10,000 steps × ~60s/step)
 
 ---
 
-## Phase 3 — LLM Instruction Fine-tuning (VLM Alignment)
-**Status:** Not started | **ETA:** ~3–5 days | **Starts after:** Phase 2
+## Phase 2B — Instruction Fine-tuning (Starts ~May 27)
 
-### What it does
-Fine-tunes keural-alpha with LoRA on visual instruction-following data.
-The projector continues training; vision encoder remains frozen.
+**Status:** Not started | **ETA:** ~5–7 days | **Target:** June 3–5
 
-### Architecture
-```
-Image → [Frozen Vision Encoder] → [Trainable Projector] → vision tokens
-                                                               ↓
-                                              [keural-alpha + LoRA]  ← trains here
-                                                               ↓
-                                                      instruction response
-```
+### What changes
+- Projector continues training (not frozen)
+- LLM gets LoRA adapters for instruction following
+- Training data changes to VQA / instruction format
 
-### Training data needed
-Visual instruction-following datasets:
-- **LLaVA-Instruct-150K** — 150K GPT-4 generated VQA pairs (download from HF)
-- **VQAv2** subset — visual question answering
-- **COCO captions** — 600K captions
-
+### Training data
 ```bash
-# Download LLaVA instruction data
+# Download LLaVA instruction data from HuggingFace
 from datasets import load_dataset
 ds = load_dataset("liuhaotian/LLaVA-Instruct-150K")
+```
+
+### Format
+```
+User: <image> What is in this image?
+Assistant: This image shows a dog running in a park...
+
+User: <image> How many people are there?
+Assistant: There are 3 people in the image...
 ```
 
 ### LoRA config
@@ -150,106 +172,114 @@ from peft import LoraConfig
 lora_config = LoraConfig(
     r=16,
     lora_alpha=32,
-    target_modules=["query_key_value", "dense"],  # GPT-NeoX attention
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM"
 )
 ```
 
-### Training settings
-```yaml
-training:
-  lr: 2.0e-5
-  max_steps: 5000
-  batch_size_per_device: 16
-  gradient_accumulation: 8
-  warmup_steps: 100
-  precision: bfloat16
-  freeze_vision: true
-  freeze_llm: false         # LoRA active
-  lora_r: 16
-  lora_alpha: 32
-```
-
-### Estimated time
-~3–5 days on RTX 5090
-
-### Expected outcome
-- Model answers questions about images
-- Follows instructions: "What color is the car?", "Describe the scene", "Count the objects"
+### Expected outcome after Phase 2B
+- Answers questions about images
+- "What color is the car?" → "The car is red"
+- "Describe the scene" → coherent paragraph
+- "How many objects?" → approximate count
 
 ---
 
-## Phase 4 — Evaluation & Release
-**Status:** Not started | **ETA:** ~1 day | **Starts after:** Phase 3
+## Phase 3 — Document Understanding (After June 10)
 
-### Benchmarks to run
-| Benchmark | Target | Tool |
-|-----------|--------|------|
-| Flickr30K i2t R@1 | >50% | `scripts/eval_checkpoint.py` |
-| COCO i2t R@1 | >30% | `scripts/eval_checkpoint.py` |
-| VQAv2 accuracy | >50% | standard VQA eval |
-| GQA | >40% | standard GQA eval |
+**Status:** Planned | **Depends on:** Docling dataset from RAG team
 
-### Release checklist
-- [ ] Upload final VLM to HuggingFace (`mkd-hika/keural-vlm`)
-- [ ] Update RESULTS.md with all benchmark numbers
-- [ ] Push projector weights to HF
-- [ ] Write VLM usage guide
-- [ ] Update GitHub README
+### What this phase adds
+Train on Docling-processed document images so Keural can understand:
+- PDF pages, research papers, reports
+- Tables, charts, figures
+- Dense text regions
+
+### Data pipeline
+```
+Docling processed dataset (from RAG team)
+      ↓
+Document page image + extracted text pairs
+      ↓
+Fine-tune vision encoder + projector on document data
+      ↓
+Keural handles both natural scenes AND documents
+```
+
+### Why ATB is well-suited for documents
+- Detail tokens (179/256) naturally focus on dense text regions
+- Region tokens capture paragraph/section blocks
+- Saliency learns text vs whitespace distinction
 
 ---
 
 ## Full Timeline
 
-| Date | Milestone |
-|------|-----------|
-| May 8 (today) | Pipeline test passed ✅ Vision encoder 8% |
-| May 16-17 | Vision encoder training complete (step 75,000) |
-| May 17 | Upload final encoder to HuggingFace |
-| May 18-19 | Projector alignment training (~10,000 steps) |
-| May 20-24 | LLM instruction fine-tuning (LoRA, ~5,000 steps) |
-| May 25 | Full VLM evaluation + release |
+| Date | Milestone | Status |
+|---|---|---|
+| May 8 | Phase 1 started | Done |
+| May 13 | checkpoint-44000, eval metrics updated | Done |
+| May 16–17 | Phase 1 complete (step 75,000) | Pending |
+| May 17 | Push checkpoint-75000 to HuggingFace | Pending |
+| May 17–18 | Build projector training script | Pending |
+| May 18–27 | Phase 2 projector training (10k steps) | Pending |
+| May 27–Jun 3 | Phase 2B instruction fine-tuning | Pending |
+| Jun 3–5 | Integration testing, demo preparation | Pending |
+| **Jun 10** | **POC demo presentation** | **Target** |
+| Post Jun 10 | Phase 3 document understanding (Docling) | Planned |
 
 ---
 
-## File Structure When Complete
+## POC Demo Plan (June 10)
+
+### What to show
+
+1. **Saliency visualization** — show ATB tokens focusing on foreground objects (not random patches)
+2. **Retrieval metrics** — R@1, R@5, MedR on 200 CC3M pairs vs random baseline
+3. **Live VLM response** — upload image, ask question, get answer from keural-14.8b-base
+4. **Architecture diagram** — CNN Stem → ATB Tokenizer → Transformer → Projector → LLM
+
+### Demo script (simple)
+```python
+# Upload image → ask question → get response
+image = load_image("demo.jpg")
+question = "What is in this image?"
+response = keural_vlm(image, question)
+print(response)
+```
+
+### Key POC claim
+> "24.7M parameter vision encoder with content-adaptive tokenization,
+> trained from scratch, connected to a 14.8B LLM via a lightweight projector.
+> Demonstrates image-text alignment learning and visual question answering."
+
+---
+
+## File Structure Target
 
 ```
 poc/
 ├── outputs/
-│   ├── run/checkpoint-75000/     ← final vision encoder
-│   ├── projector/checkpoint/     ← trained projector
-│   └── vlm/checkpoint/           ← full VLM (encoder + projector + LoRA)
+│   ├── run/checkpoint-75000/        ← Phase 1 final (May 16–17)
+│   ├── projector/checkpoint/        ← Phase 2 projector weights
+│   └── vlm/checkpoint/              ← Phase 2B full VLM
 ├── configs/
-│   ├── keural_tiny_poc.yaml      ← Phase 1 config ✅
-│   ├── projector_align.yaml      ← Phase 2 config (to create)
-│   └── vlm_instruct.yaml         ← Phase 3 config (to create)
+│   ├── keural_tiny_poc.yaml         ← Phase 1 ✅
+│   ├── projector_align.yaml         ← Phase 2 (to create)
+│   └── vlm_instruct.yaml            ← Phase 2B (to create)
 └── scripts/
-    ├── train.py                  ← Phase 1 ✅
-    ├── train_projector.py        ← Phase 2 (to create)
-    ├── train_vlm.py              ← Phase 3 (to create)
-    └── eval_vlm.py               ← Phase 4 (to create)
+    ├── train.py                     ← Phase 1 ✅
+    ├── eval_checkpoint.py           ← Phase 1 eval ✅
+    ├── eval_retrieval_cc3m.py       ← Phase 1 eval ✅
+    ├── visualize_saliency.py        ← Phase 1 viz ✅
+    ├── gui_eval.py                  ← GUI tool ✅
+    ├── train_projector.py           ← Phase 2 (to build)
+    ├── train_vlm.py                 ← Phase 2B (to build)
+    └── demo_vlm.py                  ← June 10 demo (to build)
 ```
 
 ---
 
-## What to Build Next (per phase)
-
-### After Phase 1 (build before May 17)
-- `scripts/train_projector.py` — projector-only training loop
-- `configs/projector_align.yaml` — projector training config
-
-### After Phase 2 (build before May 20)
-- `scripts/train_vlm.py` — full VLM fine-tuning with LoRA
-- `configs/vlm_instruct.yaml` — instruction tuning config
-- Download LLaVA-Instruct-150K dataset
-
-### After Phase 3 (build before May 25)
-- `scripts/eval_vlm.py` — full benchmark evaluation
-- `scripts/demo_vlm.py` — interactive demo (ask questions about any image)
-
----
-
-*Created: 2026-05-08 | Current phase: 1 of 4*
+*Created: 2026-05-08 | Updated: 2026-05-13 | Phase: 1 of 3*
