@@ -114,8 +114,12 @@ def cosine_warmup_lr(step: int, peak_lr: float, warmup_steps: int,
 print(f"\nLoading vision encoder: {args.vision_ckpt}")
 vision = AutoModel.from_pretrained(args.vision_ckpt, dtype=torch.bfloat16)
 vision = vision.to(device).eval()
-# pool_metadata is non-persistent in older checkpoints — reset to global-pool default
+# Non-persistent buffers are corrupted by from_pretrained(dtype=bfloat16) — reinitialize all
 vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
+for block in vision.encoder.blocks:
+    rope = block.attn.rope
+    i = torch.arange(0, rope.half_dim, 2, dtype=torch.float32)
+    rope.inv_freq.data.copy_(1.0 / (rope.base ** (i / rope.half_dim)))
 for p in vision.parameters():
     p.requires_grad_(False)
 n_vis = sum(p.numel() for p in vision.parameters())

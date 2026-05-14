@@ -36,12 +36,16 @@ print(f"Device: {device}")
 
 # ── load models ───────────────────────────────────────────────────────────────
 print(f"\nLoading vision encoder from: {args.checkpoint}")
-# Use bfloat16 on CUDA (matches training dtype); float32 on CPU
-load_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+# Always use bfloat16 to match training dtype — float32 on CPU causes NaN at later checkpoints
+load_dtype = torch.bfloat16
 vision = AutoModel.from_pretrained(args.checkpoint, dtype=load_dtype)
 vision = vision.to(device).eval()
-# pool_metadata was saved as non-persistent in older checkpoints — ensure correct values
+# Non-persistent buffers are corrupted by from_pretrained(dtype=bfloat16) — reinitialize all
 vision.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
+for block in vision.encoder.blocks:
+    rope = block.attn.rope
+    i = torch.arange(0, rope.half_dim, 2, dtype=torch.float32)
+    rope.inv_freq.data.copy_(1.0 / (rope.base ** (i / rope.half_dim)))
 print(f"  Parameters: {sum(p.numel() for p in vision.parameters()):,}")
 
 print("Loading text encoder (MiniLM)...")
@@ -119,7 +123,7 @@ print(f"\nEncoding {N} images (batch={batch_size})...")
 all_img_embeds = []
 pixel_tensors = [transform(img) for img in images]
 
-autocast_ctx = torch.autocast(device_type=device, dtype=load_dtype) if device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
+autocast_ctx = torch.autocast(device_type=device, dtype=torch.bfloat16)
 with torch.no_grad(), autocast_ctx:
     for i in range(0, N, batch_size):
         batch = torch.stack(pixel_tensors[i:i + batch_size]).to(device, dtype=load_dtype)

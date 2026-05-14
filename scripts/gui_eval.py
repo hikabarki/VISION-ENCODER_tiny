@@ -40,6 +40,10 @@ def get_model(ckpt_path):
     model = AutoModel.from_pretrained(ckpt_path, dtype=load_dtype)
     model = model.to(device).eval()
     model.encoder.pool_metadata.data[:] = torch.tensor([[0.5, 0.5, 1.0, 1.0]])
+    for block in model.encoder.blocks:
+        rope = block.attn.rope
+        i = torch.arange(0, rope.half_dim, 2, dtype=torch.float32)
+        rope.inv_freq.data.copy_(1.0 / (rope.base ** (i / rope.half_dim)))
     _cache["ckpt"] = ckpt_path
     _cache["model"] = model
     return model
