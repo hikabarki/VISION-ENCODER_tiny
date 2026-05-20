@@ -22,6 +22,20 @@ The full Keural VLM pipeline consists of three training phases:
 
 ---
 
+## Benchmark Results
+
+![Benchmark Comparison](project_plan/benchmark_results.png)
+
+| Benchmark | Keural VLM (24.7M enc) | LLaVA 1.5 (307M enc) | LLaVA 1.6 (307M enc) |
+|---|---|---|---|
+| VQAv2 Accuracy | 23.1% | 78.5% | 81.8% |
+| POPE F1 | 66.7% | 85.9% | 86.5% |
+| MME Total Score | 700.0 | 1510.7 | 1519.3 |
+
+> **Note:** Keural uses a **24.7M custom encoder trained from scratch** on ~15M pairs vs LLaVA's 307M CLIP encoder pretrained on 400M+ pairs (12× more params, 26× more data). The gap reflects encoder scale, not architecture limitations.
+
+---
+
 ## What makes this different
 
 Vision encoders for the LLM era have unsolved problems:
