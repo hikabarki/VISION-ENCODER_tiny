@@ -2,9 +2,9 @@
 Keural Phase 2 — Projector Alignment Training.
 
 Trains the LevelAwareProjector (384 → 2048 → 4096) that bridges the frozen
-Keural vision encoder and keural-14.8b-base. The LLM is loaded in 4-bit NF4
-(QLoRA) and remains frozen except for lightweight LoRA adapters on the
-attention layers. Only the projector and LoRA weights train.
+Keural vision encoder and an instruction-tuned LLM. The LLM is loaded in
+4-bit NF4 (QLoRA) and remains frozen except for lightweight LoRA adapters on
+the attention layers. Only the projector and LoRA weights train.
 
 Architecture during Phase 2:
     Image (256×256)
@@ -12,7 +12,7 @@ Architecture during Phase 2:
     256 tokens × 384-dim  (KeuralEncoderOutput)
         ↓  LevelAwareProjector (trains here, ~18M params)
     256 visual tokens × 4096-dim
-        ↓  keural-14.8b-base (4-bit NF4 + LoRA, ~7.4GB)
+        ↓  mistralai/Mistral-7B-Instruct-v0.3 (4-bit NF4 + LoRA, ~4.0GB)
     "Caption: <text>"
 
 Usage:
@@ -56,11 +56,11 @@ from alignment.projectors import LevelAwareProjector
 parser = argparse.ArgumentParser(description="Phase 2 projector alignment training")
 parser.add_argument("--vision-ckpt", default="outputs/run/checkpoint-75000",
                     help="Path to trained Phase 1 vision encoder checkpoint")
-parser.add_argument("--llm-name", default="mkd-hossain/keural-14.8b-base",
+parser.add_argument("--llm-name", default="mistralai/Mistral-7B-Instruct-v0.3",
                     help="HF repo ID or local path to the LLM")
 parser.add_argument("--output-dir", default="outputs/projector")
-parser.add_argument("--tar-dir", default="data/cc3m",
-                    help="Directory containing CC3M tar shards (*.tar)")
+parser.add_argument("--tar-dir", nargs="+", default=["data/cc3m"],
+                    help="One or more directories containing tar shards (*.tar)")
 parser.add_argument("--max-steps", type=int, default=10000)
 parser.add_argument("--batch-size", type=int, default=4,
                     help="Images per micro-batch (before grad accumulation)")
@@ -211,12 +211,17 @@ if args.resume:
 
 
 # ── CC3M data stream ──────────────────────────────────────────────────────────
-def cc3m_stream(tar_dir: str):
-    """Infinite shuffled generator of (PIL.Image, caption) from CC3M tar shards."""
-    tar_files = sorted(glob.glob(os.path.join(tar_dir, "*.tar")))
+def cc3m_stream(tar_dir):
+    """Infinite shuffled generator of (PIL.Image, caption) from one or more tar directories."""
+    dirs = [tar_dir] if isinstance(tar_dir, str) else tar_dir
+    tar_files = []
+    for d in dirs:
+        found = sorted(glob.glob(os.path.join(d, "*.tar")))
+        tar_files.extend(found)
+        print(f"\nData: {len(found)} tar shards in {d}")
     if not tar_files:
-        raise RuntimeError(f"No .tar files found in {tar_dir}")
-    print(f"\nData: {len(tar_files)} tar shards in {tar_dir}")
+        raise RuntimeError(f"No .tar files found in {dirs}")
+    print(f"  Total: {len(tar_files)} shards across {len(dirs)} director(ies)")
     while True:
         random.shuffle(tar_files)
         for tar_path in tar_files:

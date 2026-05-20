@@ -170,6 +170,14 @@ HTML = """<!DOCTYPE html>
   img.viz { width: 100%; border-radius: 4px; }
   #status { color: #666; font-style: italic; margin-top: 8px; }
   .spinner { display: none; color: #1976D2; font-weight: bold; margin-top: 8px; }
+  .summary-box { background: white; border-radius: 8px; padding: 16px; margin-top: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); border-top: 3px solid #1976D2; }
+  .summary-box h2 { color: #1976D2; margin: 0 0 12px; font-size: 15px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .summary-box table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .summary-box th { background: #e3f2fd; padding: 7px 10px; text-align: left; font-weight: bold; color: #333; border-bottom: 2px solid #1976D2; }
+  .summary-box td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+  .summary-box tr:hover td { background: #f5f5f5; }
+  .rank1 { color: #2e7d32; font-weight: bold; }
+  .summary-footer { font-size: 12px; color: #888; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -198,10 +206,13 @@ a person walking</textarea>
     <button id="runBtn" onclick="runEval()">Run Eval</button>
     <div class="spinner" id="spinner">Processing... please wait</div>
     <div id="status"></div>
+    <div id="summary-left"></div>
   </div>
   <div class="right" id="results"></div>
 </div>
 <script>
+let allResults = [];
+
 async function refreshCkpts() {
   const r = await fetch('/checkpoints');
   const data = await r.json();
@@ -220,6 +231,8 @@ async function runEval() {
   document.getElementById('spinner').style.display = 'block';
   document.getElementById('status').textContent = '';
   document.getElementById('results').innerHTML = '';
+  document.getElementById('summary-left').innerHTML = '';
+  allResults = [];
 
   for (const file of files) {
     const fd = new FormData();
@@ -239,6 +252,33 @@ async function runEval() {
   document.getElementById('runBtn').disabled = false;
   document.getElementById('spinner').style.display = 'none';
   document.getElementById('status').textContent = `Done - ${files.length} image(s) processed`;
+  if (allResults.length > 1) renderSummary();
+}
+
+function renderSummary() {
+  const avgNorm = (allResults.reduce((s,r) => s + r.pooled_norm, 0) / allResults.length).toFixed(4);
+  const rows = allResults.map(r => {
+    const top = r.scores[0];
+    const fname = r.name.length > 18 ? r.name.slice(0,16) + '…' : r.name;
+    return `<tr>
+      <td style="font-size:12px;color:#555;">${fname}</td>
+      <td class="rank1" style="font-size:12px;">${top.caption}</td>
+      <td style="font-size:12px;white-space:nowrap;">${top.score > 0 ? '+' : ''}${top.score.toFixed(4)}</td>
+      <td style="font-size:12px;">${r.pooled_norm.toFixed(3)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('summary-left').innerHTML = `
+    <div class="summary-box">
+      <h2>All Results Summary</h2>
+      <table>
+        <tr><th>Image</th><th>Top Caption</th><th>Score</th><th>Norm</th></tr>
+        ${rows}
+      </table>
+      <div class="summary-footer">
+        ${allResults.length} images &nbsp;|&nbsp; Avg norm: ${avgNorm}
+      </div>
+    </div>`;
 }
 
 function appendResult(name, data, err) {
@@ -247,6 +287,7 @@ function appendResult(name, data, err) {
   if (err) {
     div.innerHTML = `<h3>${name}</h3><p style="color:red">${err}</p>`;
   } else {
+    allResults.push({name, ...data});
     const maxScore = Math.max(...data.scores.map(s=>s.score));
     const minScore = Math.min(...data.scores.map(s=>s.score));
     const range = maxScore - minScore || 1;

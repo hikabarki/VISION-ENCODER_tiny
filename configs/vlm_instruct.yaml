@@ -1,0 +1,43 @@
+# Phase 2B — Instruction Fine-tuning Config
+# Trains on LLaVA-Instruct-150K conversations with COCO images.
+# Vision encoder (checkpoint-75000) is frozen. Projector (from Phase 2A) continues training.
+
+vision_ckpt: outputs/run/checkpoint-75000
+projector_ckpt: outputs/projector/checkpoint-10000/projector.pt
+llm_name: mkd-hossain/keural-14.8b-base
+output_dir: outputs/vlm
+coco_dir: data/coco/train2017
+llava_json: data/llava_instruct/llava_instruct_150k.json
+
+training:
+  max_steps: 5000
+  batch_size: 2           # micro-batch per grad-accum step
+  grad_accum: 16          # effective batch = 32
+  lr: 2.0e-5              # lower than Phase 2A — projector already aligned
+  warmup_steps: 300
+  weight_decay: 0.05
+  save_every: 500
+  log_every: 10
+  token_budget: 256
+  max_text_length: 512    # max tokenized conversation length
+
+projector:
+  hidden_dim: 2048        # must match Phase 2A
+
+lora:
+  r: 16
+  alpha: 32
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj              # expanded vs Phase 2A for instruction following
+  dropout: 0.05
+
+# VRAM estimate (RTX 5090, 32GB):
+#   keural-14.8b-base (4-bit NF4 double-quant): ~7.4 GB
+#   Vision encoder (bf16, frozen):              ~50 MB
+#   LevelAwareProjector (bf16):                 ~50 MB
+#   LoRA adapters (r=16, q+k+v+o):             ~160 MB
+#   Activations + gradients:                   ~5-7 GB
+#   Total estimated:                           ~13-15 GB  (well within 32GB)
