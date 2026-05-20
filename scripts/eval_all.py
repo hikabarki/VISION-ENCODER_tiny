@@ -206,7 +206,7 @@ if not args.skip_pope:
 
     for split in ["adversarial", "popular", "random"]:
         print(f"\n  Split: {split}")
-        dataset = load_dataset("lmms-lab/POPE", split=split, trust_remote_code=True)
+        dataset = load_dataset("lmms-lab/POPE", split, split="test")
         preds, labels = [], []
         for item in tqdm(dataset, desc=f"  POPE-{split}"):
             prompt = make_prompt(item["question"], "Answer yes or no only.")
