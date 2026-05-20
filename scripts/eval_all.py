@@ -206,13 +206,13 @@ if not args.skip_pope:
 
     for split in ["adversarial", "popular", "random"]:
         print(f"\n  Split: {split}")
-        dataset = load_dataset("lmms-lab/POPE", split, split="test")
+        dataset = load_dataset("lmms-lab/POPE", "Full", split=split)
         preds, labels = [], []
         for item in tqdm(dataset, desc=f"  POPE-{split}"):
             prompt = make_prompt(item["question"], "Answer yes or no only.")
             pred   = extract_yes_no(run_inference(item["image"], prompt, max_new_tokens=5))
             preds.append(pred)
-            labels.append(item["label"].lower().strip())
+            labels.append(item["answer"].lower().strip())
         m = pope_metrics(preds, labels)
         pope_results[split] = m
         print(f"  Acc={m['accuracy']:.2f}%  F1={m['f1']:.2f}%  "
