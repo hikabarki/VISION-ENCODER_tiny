@@ -169,7 +169,7 @@ if not args.skip_vqa:
     for item in tqdm(dataset, desc="VQAv2"):
         prompt = make_prompt(item["question"], "Answer in one or two words.")
         pred   = normalize_vqa(run_inference(item["image"], prompt, max_new_tokens=10))
-        answers = [normalize_vqa(a) for a in item["answers"]]
+        answers = [normalize_vqa(a["answer"] if isinstance(a, dict) else a) for a in item["answers"]]
         acc    = min(answers.count(pred) / 3.0, 1.0)
         correct += acc
         vqa_results.append({"question": item["question"], "pred": pred,
