@@ -30,6 +30,17 @@ Real model outputs on diverse image types (animal, sport, scene, OCR/text slide)
 
 ---
 
+## Training Loss Curves
+
+![Training Loss Curves](project_plan/training_loss_curves.png)
+
+| Phase | Steps | Final Loss |
+|---|---|---|
+| Phase 2A — Projector Alignment | 20,000 | **1.897** |
+| Phase 2B — Instruction Fine-Tuning (LoRA) | 10,000 | **1.083** |
+
+---
+
 ## ATB Token Budget — Latency & Speedup
 
 ![Token Budget Curve](project_plan/token_budget_curve.png)
@@ -55,6 +66,8 @@ No other open-source vision encoder exposes this control at the token level.
 | VQAv2 Accuracy | 23.1% | 78.5% | 81.8% |
 | POPE F1 | 66.7% | 85.9% | 86.5% |
 | MME Total Score | 700.0 | 1510.7 | 1519.3 |
+| TextVQA Accuracy | 5.6% | 58.2% | 64.9% |
+| ScienceQA Accuracy (img) | 53.0% | 66.8% | 70.6% |
 
 > **Note:** Keural uses a **24.7M custom encoder trained from scratch** on ~15M pairs vs LLaVA's 307M CLIP encoder pretrained on 400M+ pairs (12× more params, 26× more data). The gap reflects encoder scale, not architecture limitations.
 
