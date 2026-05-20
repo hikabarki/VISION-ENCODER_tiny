@@ -158,7 +158,7 @@ if not args.skip_vqa:
     print("="*55)
     t0 = time.time()
 
-    dataset = load_dataset("HuggingFaceM4/VQAv2", split="validation", trust_remote_code=True)
+    dataset = load_dataset("lmms-lab/VQAv2", split="validation")
     if args.vqa_samples > 0:
         dataset = dataset.select(range(min(args.vqa_samples, len(dataset))))
     print(f"  {len(dataset):,} samples  "

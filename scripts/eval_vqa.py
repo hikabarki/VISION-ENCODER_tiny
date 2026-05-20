@@ -80,7 +80,7 @@ else:
 llm.eval()
 
 print("[4/4] Loading VQAv2 dataset...")
-dataset = load_dataset("HuggingFaceM4/VQAv2", split="validation", trust_remote_code=True)
+dataset = load_dataset("lmms-lab/VQAv2", split="validation")
 if args.num_samples > 0:
     dataset = dataset.select(range(min(args.num_samples, len(dataset))))
 print(f"  {len(dataset)} samples\n")
