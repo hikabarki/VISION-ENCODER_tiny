@@ -6,6 +6,22 @@ Keural vision encoder designed for the LLM era. Plug-in compatible with any LLM 
 
 ---
 
+## VLM Pipeline Architecture
+
+![Keural VLM Architecture](project_plan/keural_vlm_ieee.png)
+
+The full Keural VLM pipeline consists of three training phases:
+
+| Phase | Component | Steps | Dataset | Final Loss |
+|---|---|---|---|---|
+| Phase 1 | Vision Encoder (24.7M params) | ~75,000 | CC3M + CC12M (~15M pairs) | pooled norm 3.47 |
+| Phase 2A | LevelAware Projector (384→2048→4096) | 20,000 | CC3M + CC12M captions | 1.897 |
+| Phase 2B | Mistral 7B + LoRA instruction fine-tuning | 10,000 | LLaVA-Instruct-150K + COCO | ~1.05 |
+
+**VLM weights on HuggingFace:** [`mkd-hika/keural-vlm-poc`](https://huggingface.co/mkd-hika/keural-vlm-poc)
+
+---
+
 ## What makes this different
 
 Vision encoders for the LLM era have unsolved problems:
