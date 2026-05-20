@@ -209,11 +209,22 @@ if args.resume:
         latest = ckpts[-1]
         resume_step = int(latest.name.split("-")[-1])
         print(f"\nResuming from {latest.name} (step {resume_step})")
-        proj_path = latest / "projector.pt"
+        proj_path  = latest / "projector.pt"
         state_path = latest / "training_state.pt"
+        lora_path  = latest / "lora_adapter"
         if proj_path.exists():
             projector.load_state_dict(torch.load(proj_path, map_location=device))
             print("  Projector weights loaded")
+        if lora_path.exists():
+            from peft import set_peft_model_state_dict
+            from safetensors.torch import load_file as load_safetensors
+            adapter_file = lora_path / "adapter_model.safetensors"
+            if adapter_file.exists():
+                lora_state = load_safetensors(str(adapter_file))
+                set_peft_model_state_dict(llm, lora_state)
+                print("  LoRA adapter weights loaded")
+            else:
+                print("  WARNING: lora_adapter folder found but no adapter_model.safetensors")
         if state_path.exists():
             state = torch.load(state_path, map_location="cpu")
             optimizer.load_state_dict(state["optimizer"])
