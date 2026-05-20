@@ -28,13 +28,13 @@ with open(summary_path) as f:
 # ── published baseline scores ─────────────────────────────────────────────────
 # Source: LLaVA-1.5 paper, LLaVA-1.6 (LLaVA-NeXT) paper
 BASELINES = {
-    "LLaVA 1.5\n(7B)": {
+    "LLaVA 1.5\n(307M enc)": {
         "vqav2":    78.5,
         "pope_acc": 85.9,
         "pope_f1":  85.9,
         "mme":      1510.7,
     },
-    "LLaVA 1.6\n(7B)": {
+    "LLaVA 1.6\n(307M enc)": {
         "vqav2":    81.8,
         "pope_acc": 86.5,
         "pope_f1":  86.5,
@@ -54,9 +54,9 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 6))
 fig.patch.set_facecolor("#0d1117")
 
 COLORS = {
-    "Keural VLM\n(24.7M enc)": "#00d4aa",
-    "LLaVA 1.5\n(7B)":         "#4f8ef7",
-    "LLaVA 1.6\n(7B)":         "#a78bfa",
+    "Keural VLM\n(24.7M enc)":  "#00d4aa",
+    "LLaVA 1.5\n(307M enc)":    "#4f8ef7",
+    "LLaVA 1.6\n(307M enc)":    "#a78bfa",
 }
 
 models      = list(COLORS.keys())
@@ -88,25 +88,25 @@ def bar_group(ax, metric_key, title, ylabel, max_val, models_data):
 
 # VQAv2
 vqav2_data = {
-    "Keural VLM\n(24.7M enc)": keural_scores["vqav2"] or 0,
-    "LLaVA 1.5\n(7B)":         BASELINES["LLaVA 1.5\n(7B)"]["vqav2"],
-    "LLaVA 1.6\n(7B)":         BASELINES["LLaVA 1.6\n(7B)"]["vqav2"],
+    "Keural VLM\n(24.7M enc)":  keural_scores["vqav2"] or 0,
+    "LLaVA 1.5\n(307M enc)":    BASELINES["LLaVA 1.5\n(307M enc)"]["vqav2"],
+    "LLaVA 1.6\n(307M enc)":    BASELINES["LLaVA 1.6\n(307M enc)"]["vqav2"],
 }
 bar_group(axes[0], "vqav2", "VQAv2 Accuracy (%)", "Accuracy (%)", 100, vqav2_data)
 
 # POPE F1
 pope_data = {
-    "Keural VLM\n(24.7M enc)": keural_scores["pope_f1"] or 0,
-    "LLaVA 1.5\n(7B)":         BASELINES["LLaVA 1.5\n(7B)"]["pope_f1"],
-    "LLaVA 1.6\n(7B)":         BASELINES["LLaVA 1.6\n(7B)"]["pope_f1"],
+    "Keural VLM\n(24.7M enc)":  keural_scores["pope_f1"] or 0,
+    "LLaVA 1.5\n(307M enc)":    BASELINES["LLaVA 1.5\n(307M enc)"]["pope_f1"],
+    "LLaVA 1.6\n(307M enc)":    BASELINES["LLaVA 1.6\n(307M enc)"]["pope_f1"],
 }
 bar_group(axes[1], "pope_f1", "POPE F1 Score (%)", "F1 (%)", 100, pope_data)
 
 # MME
 mme_data = {
-    "Keural VLM\n(24.7M enc)": keural_scores["mme"] or 0,
-    "LLaVA 1.5\n(7B)":         BASELINES["LLaVA 1.5\n(7B)"]["mme"],
-    "LLaVA 1.6\n(7B)":         BASELINES["LLaVA 1.6\n(7B)"]["mme"],
+    "Keural VLM\n(24.7M enc)":  keural_scores["mme"] or 0,
+    "LLaVA 1.5\n(307M enc)":    BASELINES["LLaVA 1.5\n(307M enc)"]["mme"],
+    "LLaVA 1.6\n(307M enc)":    BASELINES["LLaVA 1.6\n(307M enc)"]["mme"],
 }
 bar_group(axes[2], "mme", "MME Total Score", "Score", 2000, mme_data)
 
