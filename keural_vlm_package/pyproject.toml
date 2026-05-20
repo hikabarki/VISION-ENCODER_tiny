@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "keural-vlm"
+version = "0.1.0"
+description = "Keural Vision-Language Model — custom 24.7M vision encoder aligned to Mistral 7B"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+keywords = ["vision-language-model", "multimodal", "vlm", "mistral", "lora"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.40.0",
+    "peft>=0.10.0",
+    "bitsandbytes>=0.43.0",
+    "accelerate>=0.27.0",
+    "huggingface_hub>=0.20.0",
+    "Pillow>=9.0.0",
+    "safetensors>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://keural.ai"
+Repository = "https://github.com/mkd-hika/VISION-ENCODER"
+"HuggingFace" = "https://huggingface.co/mkd-hika/keural-vlm-poc"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["keural_vlm*"]
