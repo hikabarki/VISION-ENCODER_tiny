@@ -22,6 +22,30 @@ The full Keural VLM pipeline consists of three training phases:
 
 ---
 
+## Qualitative Examples
+
+![Qualitative Examples](project_plan/qualitative_examples.png)
+
+Real model outputs on diverse image types (animal, sport, scene, OCR/text slide).
+
+---
+
+## ATB Token Budget — Latency & Speedup
+
+![Token Budget Curve](project_plan/token_budget_curve.png)
+
+The **Adaptive Token Budget (ATB)** lets you trade visual detail for speed at runtime:
+
+```python
+out_fast  = encoder(image, token_budget=64)   # 422ms — low detail, fast
+out_mid   = encoder(image, token_budget=256)  # 437ms — recommended default
+out_dense = encoder(image, token_budget=512)  # 469ms — maximum detail
+```
+
+No other open-source vision encoder exposes this control at the token level.
+
+---
+
 ## Benchmark Results
 
 ![Benchmark Comparison](project_plan/benchmark_results.png)
