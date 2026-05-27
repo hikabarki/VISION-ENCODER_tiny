@@ -30,7 +30,7 @@ Usage:
 
 from __future__ import annotations
 
-import sys, os, json, math, time, random, shutil, argparse
+import sys, os, json, math, time, random, shutil, argparse, subprocess
 sys.path.insert(0, "/home/mkd-s002/vision-encoder/poc")
 
 import torch
@@ -402,6 +402,26 @@ accum_count = 0
 accum_loss = 0.0
 step = start_step
 start_time = time.time()
+tokens_seen = 0  # total text tokens processed
+
+
+def gpu_stats() -> dict:
+    """Return GPU utilization %, memory used MiB, memory total MiB, temperature C."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi",
+             "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            stderr=subprocess.DEVNULL, timeout=2,
+        ).decode().strip().split(",")
+        return {
+            "gpu_util":   int(out[0].strip()),
+            "gpu_mem_mb": int(out[1].strip()),
+            "gpu_mem_total_mb": int(out[2].strip()),
+            "gpu_temp_c": int(out[3].strip()),
+        }
+    except Exception:
+        return {"gpu_util": -1, "gpu_mem_mb": -1, "gpu_mem_total_mb": -1, "gpu_temp_c": -1}
 
 try:
     while step < args.max_steps:
@@ -452,6 +472,7 @@ try:
                 labels=labels,
             )
             loss = outputs.loss / args.grad_accum
+        tokens_seen += int((labels != -100).sum().item())
 
         loss.backward()
         accum_loss += loss.item()
@@ -476,18 +497,35 @@ try:
                 eta_secs = int(secs_per_step * (args.max_steps - step))
                 eta_h, eta_m = divmod(eta_secs // 60, 60)
                 pct = step / args.max_steps * 100
+                tok_per_sec = tokens_seen / max(elapsed, 1)
+                gpu = gpu_stats()
+                gpu_str = (
+                    f"GPU={gpu['gpu_util']}%  "
+                    f"VRAM={gpu['gpu_mem_mb']}/{gpu['gpu_mem_total_mb']}MiB  "
+                    f"T={gpu['gpu_temp_c']}°C"
+                ) if gpu["gpu_util"] >= 0 else "GPU=n/a"
                 line = (
-                    f"[train] step={step:5d}/{args.max_steps} ({pct:.1f}%) "
+                    f"[train] step={step:5d}/{args.max_steps} ({pct:.1f}%)  "
                     f"ETA={eta_h}h{eta_m:02d}m  "
-                    f"lr={current_lr:.2e}  "
                     f"loss={accum_loss:.4f}  "
-                    f"grad_norm={float(grad_norm):.2e}"
+                    f"lr={current_lr:.2e}  "
+                    f"grad={float(grad_norm):.2e}  "
+                    f"tok/s={tok_per_sec:.0f}  "
+                    f"{gpu_str}"
                 )
                 print(line)
                 with log_path.open("a") as f:
                     f.write(json.dumps({
-                        "step": step, "loss": accum_loss,
-                        "lr": current_lr, "grad_norm": float(grad_norm),
+                        "step": step,
+                        "loss": accum_loss,
+                        "lr": current_lr,
+                        "grad_norm": float(grad_norm),
+                        "tok_per_sec": round(tok_per_sec, 1),
+                        "gpu_util_pct": gpu["gpu_util"],
+                        "gpu_mem_mb": gpu["gpu_mem_mb"],
+                        "gpu_temp_c": gpu["gpu_temp_c"],
+                        "tokens_seen": tokens_seen,
+                        "elapsed_s": round(elapsed, 1),
                     }) + "\n")
 
             accum_loss = 0.0

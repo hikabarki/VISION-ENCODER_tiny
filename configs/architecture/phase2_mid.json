@@ -4,12 +4,12 @@
   "description": "Mid-level model. Production-grade quality targeting CLIP ViT-L/14 performance class. Trained on large-scale curated data. Suitable for downstream fine-tuning and VLM integration.",
 
   "parameters": {
-    "total": "~183M",
+    "total": "~230M",
     "breakdown": {
       "stem": "~3M",
       "saliency_head": "~0.6M",
       "atb_tokenizer": "~1M",
-      "spatial_transformer": "~244M",
+      "spatial_transformer": "~225M",
       "level_embeddings": "<0.1M",
       "pool_token": "<0.1M"
     }
@@ -69,10 +69,37 @@
     "primary": "sigmoid_siglip",
     "lambda_hct": 1.0,
     "lambda_sal": 0.5,
+    "lambda_distill": 0.5,
     "hct_alpha": 0.5,
     "saliency_beta": 0.005,
     "learnable_temperature_init": 2.30,
-    "learnable_bias_init": -10.0
+    "learnable_bias_init": -10.0,
+    "total_loss_formula": "siglip_loss + 1.0 * hct_loss + 0.5 * sal_loss + 0.5 * distill_loss"
+  },
+
+  "knowledge_distillation": {
+    "enabled": true,
+    "teachers": {
+      "natural_images": {
+        "model": "google/siglip-so400m-patch14-384",
+        "embed_dim": 1152,
+        "projection": "nn.Linear(1152, 768)",
+        "lambda": 0.5,
+        "loss": "1 - cosine_similarity(keural_pooled, siglip_pooled)",
+        "batch_type": "natural"
+      },
+      "documents": {
+        "model": "OpenGVLab/InternViT-300M-448px",
+        "embed_dim": 768,
+        "projection": "none — embed_dim matches keural_mid",
+        "lambda": 0.5,
+        "loss": "1 - cosine_similarity(keural_pooled, internvit_pooled)",
+        "batch_type": "document"
+      }
+    },
+    "teachers_frozen": true,
+    "apply_phase": "Phase 1M only — encoder must be trainable for distillation to have effect",
+    "note": "Teachers are discarded after training — not part of final model. Full IP ownership retained."
   },
 
   "training": {
@@ -92,13 +119,15 @@
   },
 
   "data": {
-    "datasets": ["CC3M", "CC12M", "LAION-400M subset", "curated web data"],
-    "total_samples": "~400M",
+    "datasets": ["CC3M", "CC12M", "COYO-700M: Image-Text Pair Dataset (clip_score > 0.35, top ~30%)"],
+    "total_samples": "~230M",
+    "dataset_note": "COYO-700M filtered to ~215M high-quality pairs + 15M CC3M/CC12M. Simple single-source pipeline.",
     "image_buckets": [
       [224, 224], [256, 256], [320, 320],
       [384, 384], [448, 448], [512, 512]
     ],
-    "text_encoder": "openai/clip-vit-large-patch14 text tower (frozen) or trained jointly",
+    "text_encoder": "openai/clip-vit-large-patch14 text tower (frozen, 768-dim — matches embed_dim)",
+    "text_encoder_note": "Upgrade from MiniLM-L6 (384-dim used in POC). CLIP text tower outputs 768-dim matching encoder embed_dim — no projection needed.",
     "num_workers": 16,
     "deduplication": true,
     "nsfw_filtering": true,
@@ -125,7 +154,7 @@
     "2× depth (12→24) — deeper reasoning over token hierarchy",
     "2× default token budget (256→512) — finer spatial detail",
     "Larger roi_align_size (2→4) — better region feature extraction",
-    "Trained on 400M vs 6.9M samples — much stronger generalization",
+    "Trained on 230M vs 6.9M samples — much stronger generalization (COYO-700M clip_score > 0.35 + CC3M + CC12M)",
     "Data cleaning pipeline — dedup + NSFW + quality scoring",
     "Larger image buckets (up to 512×512) — high-res understanding"
   ]

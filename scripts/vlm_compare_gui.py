@@ -31,8 +31,8 @@ from peft import PeftModel
 # ── CLI args ──────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument("--vision-ckpt",    default="outputs/run/final")
-parser.add_argument("--projector-ckpt", default="outputs/vlm/checkpoint-2000/projector.pt")
-parser.add_argument("--lora-ckpt",      default="outputs/vlm/checkpoint-2000/lora_adapter")
+parser.add_argument("--projector-ckpt", default="outputs/vlm/checkpoint-30000/projector.pt")
+parser.add_argument("--lora-ckpt",      default="outputs/vlm/checkpoint-30000/lora_adapter")
 parser.add_argument("--llm-name",       default="mistralai/Mistral-7B-Instruct-v0.3")
 parser.add_argument("--llava-model",    default="llava-hf/llava-v1.6-mistral-7b-hf")
 parser.add_argument("--token-budget",   type=int, default=256)
@@ -236,7 +236,7 @@ Upload an image and ask questions to compare both systems side by side.
         with gr.Column():
             gr.Markdown(
                 "### Keural Vision Encoder\n"
-                "`24.7M params | ATB + HCT | trained from scratch | Phase 2B LoRA`"
+                "`24.7M params | ATB + HCT | trained from scratch | SFT 30K + DPO aligned`"
             )
             keural_chat = gr.Chatbot(label="Keural Response", height=400)
         with gr.Column():

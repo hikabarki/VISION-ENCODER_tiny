@@ -3,10 +3,18 @@ Keural VLM — Interactive Chat GUI.
 Upload any image and ask questions about it in a chat interface.
 
 Usage:
+    # SFT only
     python3.10 scripts/vlm_chat_gui.py \
         --vision-ckpt outputs/run/final \
-        --projector-ckpt outputs/vlm/checkpoint-1000/projector.pt \
-        --lora-ckpt outputs/vlm/checkpoint-1000/lora_adapter
+        --projector-ckpt outputs/vlm/checkpoint-30000/projector.pt \
+        --lora-ckpt outputs/vlm/checkpoint-30000/lora_adapter
+
+    # SFT + DPO (stacked)
+    python3.10 scripts/vlm_chat_gui.py \
+        --vision-ckpt outputs/run/final \
+        --projector-ckpt outputs/vlm/checkpoint-30000/projector.pt \
+        --lora-ckpt outputs/vlm/checkpoint-30000/lora_adapter \
+        --dpo-lora-ckpt outputs/dpo/final
 
 Then open: http://localhost:7860
 """
@@ -18,6 +26,10 @@ import torch
 import torchvision.transforms as T
 from PIL import Image
 import gradio as gr
+import easyocr
+import numpy as np
+
+ocr_reader = easyocr.Reader(['en'], gpu=torch.cuda.is_available(), verbose=False)
 
 import alignment.hf_wrapper
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -27,7 +39,8 @@ from peft import PeftModel
 parser = argparse.ArgumentParser()
 parser.add_argument("--vision-ckpt",    default="outputs/run/final")
 parser.add_argument("--projector-ckpt", default="outputs/vlm/checkpoint-1000/projector.pt")
-parser.add_argument("--lora-ckpt",      default="outputs/vlm/checkpoint-1000/lora_adapter")
+parser.add_argument("--lora-ckpt",      default="outputs/vlm/checkpoint-30000/lora_adapter")
+parser.add_argument("--dpo-lora-ckpt",  default=None)
 parser.add_argument("--llm-name",       default="mistralai/Mistral-7B-Instruct-v0.3")
 parser.add_argument("--token-budget",   type=int, default=256)
 parser.add_argument("--hidden-dim",     type=int, default=2048)
@@ -76,11 +89,13 @@ bnb_cfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfl
 base_llm = AutoModelForCausalLM.from_pretrained(args.llm_name, quantization_config=bnb_cfg,
                                                   device_map="auto", torch_dtype=torch.bfloat16)
 if os.path.exists(args.lora_ckpt):
-    llm = PeftModel.from_pretrained(base_llm, args.lora_ckpt)
-    print(f"  LoRA loaded from {args.lora_ckpt}")
+    print(f"  Loading SFT LoRA from {args.lora_ckpt}...", flush=True)
+    llm = PeftModel.from_pretrained(base_llm, args.lora_ckpt, local_files_only=True)
+    print(f"  SFT LoRA loaded.", flush=True)
 else:
     llm = base_llm
-    print("  No LoRA — using base model")
+    print("  No SFT LoRA — using base model")
+
 llm.eval()
 print("\nAll models loaded. Starting GUI...\n")
 
@@ -130,12 +145,31 @@ def generate_answer(visual_embeds, question):
 
 # ── Gradio state ──────────────────────────────────────────────────────────────
 current_visual_embeds = [None]
+current_ocr_text = [None]
 
-def load_image(pil_image):
+def run_ocr(pil_image):
+    try:
+        img_np = np.array(pil_image.convert("RGB"))
+        results = ocr_reader.readtext(img_np, detail=0, paragraph=True)
+        text = " ".join(results).strip()
+        return text if text else None
+    except Exception:
+        return None
+
+def load_image(pil_image, use_ocr):
     if pil_image is None:
-        return [], None, "No image loaded."
+        return [], None, "No image loaded.", ""
     current_visual_embeds[0] = encode_image(pil_image)
-    return [], current_visual_embeds[0], "✅ Image loaded. Ask your question below."
+    ocr_text = None
+    ocr_display = ""
+    if use_ocr:
+        ocr_text = run_ocr(pil_image)
+        ocr_display = ocr_text if ocr_text else "(no text detected)"
+    current_ocr_text[0] = ocr_text
+    status_msg = "✅ Image loaded."
+    if use_ocr:
+        status_msg += f" OCR: {'found text' if ocr_text else 'no text found'}"
+    return [], current_visual_embeds[0], status_msg, ocr_display
 
 def chat(message, history):
     if not message.strip():
@@ -144,18 +178,24 @@ def chat(message, history):
         history.append({"role": "user", "content": message})
         history.append({"role": "assistant", "content": "⚠️ Please upload an image first."})
         return history, ""
-    answer = generate_answer(current_visual_embeds[0], message)
+    if current_ocr_text[0]:
+        enriched_question = f"The image contains this text: \"{current_ocr_text[0]}\"\n\n{message}"
+    else:
+        enriched_question = message
+    answer = generate_answer(current_visual_embeds[0], enriched_question)
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": answer})
     return history, ""
 
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
 with gr.Blocks(title="Keural VLM Chat") as demo:
-    gr.Markdown("# Keural VLM — Vision Chat\nUpload an image, then ask questions about it.")
+    gr.Markdown("# Keural VLM — Vision Chat\n**24.7M encoder · SFT 30K steps · DPO aligned · OCR enabled**\nUpload an image, then ask questions about it.")
 
     with gr.Row():
         with gr.Column(scale=1):
             image_input = gr.Image(type="pil", label="Upload Image", height=350)
+            use_ocr = gr.Checkbox(label="Enable OCR (extract text from image)", value=True)
+            ocr_output = gr.Textbox(label="OCR Extracted Text", interactive=False, lines=3)
             status = gr.Textbox(label="Status", value="Upload an image to begin.", interactive=False)
             visual_state = gr.State(None)
 
@@ -172,19 +212,19 @@ with gr.Blocks(title="Keural VLM Chat") as demo:
                 examples=[
                     ["What is in this image?"],
                     ["Describe this image in detail."],
+                    ["What text is in this image?"],
+                    ["Read the text in this image."],
                     ["What color is the main object?"],
                     ["Is there a person in this image?"],
                     ["How many objects can you count?"],
                     ["What is happening in this image?"],
-                    ["What is the mood or atmosphere?"],
-                    ["Is this indoors or outdoors?"],
                 ],
                 inputs=question_input,
                 label="Quick questions"
             )
 
-    image_input.change(load_image, inputs=image_input,
-                       outputs=[chatbot, visual_state, status])
+    image_input.change(load_image, inputs=[image_input, use_ocr],
+                       outputs=[chatbot, visual_state, status, ocr_output])
     send_btn.click(chat, inputs=[question_input, chatbot],
                    outputs=[chatbot, question_input])
     question_input.submit(chat, inputs=[question_input, chatbot],

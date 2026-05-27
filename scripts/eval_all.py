@@ -43,15 +43,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--vision-ckpt",    default="outputs/run/final")
 parser.add_argument("--projector-ckpt", default="outputs/vlm/checkpoint-10000/projector.pt")
 parser.add_argument("--lora-ckpt",      default="outputs/vlm/checkpoint-10000/lora_adapter")
+parser.add_argument("--dpo-lora-ckpt",  default="", help="Optional DPO LoRA to stack on top of SFT LoRA")
 parser.add_argument("--llm-name",       default="mistralai/Mistral-7B-Instruct-v0.3")
 parser.add_argument("--token-budget",   type=int, default=256)
 parser.add_argument("--hidden-dim",     type=int, default=2048)
 parser.add_argument("--vqa-samples",    type=int, default=1000,
                     help="VQAv2 samples (-1 = full 214K validation set)")
 parser.add_argument("--output-dir",     default="outputs/eval")
-parser.add_argument("--skip-vqa",  action="store_true")
-parser.add_argument("--skip-pope", action="store_true")
-parser.add_argument("--skip-mme",  action="store_true")
+parser.add_argument("--textvqa-samples",   type=int, default=1000)
+parser.add_argument("--scienceqa-samples", type=int, default=1000)
+parser.add_argument("--skip-vqa",       action="store_true")
+parser.add_argument("--skip-pope",      action="store_true")
+parser.add_argument("--skip-mme",       action="store_true")
+parser.add_argument("--skip-textvqa",   action="store_true")
+parser.add_argument("--skip-scienceqa", action="store_true")
 args = parser.parse_args()
 
 os.makedirs(args.output_dir, exist_ok=True)
@@ -94,6 +99,9 @@ bnb_cfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfl
 base_llm = AutoModelForCausalLM.from_pretrained(args.llm_name, quantization_config=bnb_cfg,
                                                   device_map="auto", torch_dtype=torch.bfloat16)
 llm = PeftModel.from_pretrained(base_llm, args.lora_ckpt) if os.path.exists(args.lora_ckpt) else base_llm
+if args.dpo_lora_ckpt and os.path.exists(args.dpo_lora_ckpt):
+    llm = PeftModel.from_pretrained(llm, args.dpo_lora_ckpt)
+    print(f"  DPO LoRA loaded from {args.dpo_lora_ckpt}")
 llm.eval()
 print("\nAll models loaded.\n")
 
@@ -275,6 +283,94 @@ if not args.skip_mme:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# BENCHMARK 4 — TextVQA
+# ══════════════════════════════════════════════════════════════════════════════
+textvqa_score = None
+CONTRACTIONS = {"aint": "ain't", "cant": "can't", "couldnt": "couldn't", "didnt": "didn't",
+                "doesnt": "doesn't", "dont": "don't", "hadnt": "hadn't", "hasnt": "hasn't",
+                "isnt": "isn't", "shouldnt": "shouldn't", "wasnt": "wasn't", "wouldnt": "wouldn't"}
+
+def normalize_ans(answer):
+    answer = answer.lower().strip()
+    answer = answer.translate(str.maketrans("", "", string.punctuation))
+    return CONTRACTIONS.get(answer, answer).strip()
+
+if not args.skip_textvqa:
+    print("="*55)
+    print("  BENCHMARK 4 / 5 — TextVQA")
+    print("="*55)
+    t0 = time.time()
+    dataset = load_dataset("lmms-lab/textvqa", split="validation")
+    if args.textvqa_samples > 0:
+        dataset = dataset.select(range(min(args.textvqa_samples, len(dataset))))
+    print(f"  {len(dataset):,} samples\n")
+    correct = 0
+    results = []
+    for item in tqdm(dataset, desc="TextVQA"):
+        prompt  = f"[INST] <image>\n{item['question']} Answer in one or two words. [/INST]"
+        pred    = normalize_ans(run_inference(item["image"], prompt, max_new_tokens=10))
+        answers = [normalize_ans(a) for a in item["answers"]]
+        acc     = min(answers.count(pred) / 3.0, 1.0)
+        correct += acc
+        results.append({"question": item["question"], "pred": pred, "answers": list(set(answers)), "acc": acc})
+    textvqa_score = correct / len(dataset) * 100
+    elapsed = (time.time() - t0) / 60
+    print(f"\n  TextVQA Accuracy: {textvqa_score:.2f}%  ({len(dataset):,} samples, {elapsed:.1f} min)\n")
+    with open(os.path.join(args.output_dir, "textvqa_results.json"), "w") as f:
+        json.dump({"accuracy": textvqa_score, "num_samples": len(dataset), "results": results}, f, indent=2)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BENCHMARK 5 — ScienceQA
+# ══════════════════════════════════════════════════════════════════════════════
+scienceqa_score = None
+if not args.skip_scienceqa:
+    print("="*55)
+    print("  BENCHMARK 5 / 5 — ScienceQA (image subset)")
+    print("="*55)
+    t0 = time.time()
+    dataset = load_dataset("derek-thomas/ScienceQA", split="validation")
+    dataset = dataset.filter(lambda x: x["image"] is not None)
+    if args.scienceqa_samples > 0:
+        dataset = dataset.select(range(min(args.scienceqa_samples, len(dataset))))
+    print(f"  {len(dataset):,} samples\n")
+    CHOICE_LETTERS = "ABCDE"
+
+    def format_choices(choices):
+        return "  ".join(f"{CHOICE_LETTERS[i]}) {c}" for i, c in enumerate(choices))
+
+    def extract_choice(text, n_choices):
+        t = text.strip().upper()
+        if t and t[0] in CHOICE_LETTERS[:n_choices]:
+            return t[0]
+        for letter in CHOICE_LETTERS[:n_choices]:
+            if f"ANSWER: {letter}" in t or f"OPTION {letter}" in t or f"({letter})" in t:
+                return letter
+        for letter in CHOICE_LETTERS[:n_choices]:
+            if letter in t.split():
+                return letter
+        return "A"
+
+    correct = 0
+    results = []
+    for item in tqdm(dataset, desc="ScienceQA"):
+        choices_str = format_choices(item["choices"])
+        question    = f"{item['question']}\n{choices_str}"
+        prompt      = f"[INST] <image>\n{question} Answer with only the letter of the correct choice. [/INST]"
+        pred_text   = run_inference(item["image"], prompt, max_new_tokens=5)
+        pred_letter = extract_choice(pred_text, len(item["choices"]))
+        gold_letter = CHOICE_LETTERS[item["answer"]]
+        is_correct  = pred_letter == gold_letter
+        correct    += int(is_correct)
+        results.append({"question": item["question"], "pred": pred_letter, "gold": gold_letter, "correct": is_correct})
+    scienceqa_score = correct / len(dataset) * 100
+    elapsed = (time.time() - t0) / 60
+    print(f"\n  ScienceQA Accuracy: {scienceqa_score:.2f}%  ({len(dataset):,} samples, {elapsed:.1f} min)\n")
+    with open(os.path.join(args.output_dir, "scienceqa_results.json"), "w") as f:
+        json.dump({"accuracy": scienceqa_score, "num_samples": len(dataset), "results": results}, f, indent=2)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # FINAL SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n" + "="*55)
@@ -289,13 +385,19 @@ if pope_results:
     print(f"  POPE Avg F1        : {avg_f1:.2f}%")
 if mme_results:
     print(f"  MME Total Score    : {total_mme:.1f}")
+if textvqa_score is not None:
+    print(f"  TextVQA Accuracy   : {textvqa_score:.2f}%")
+if scienceqa_score is not None:
+    print(f"  ScienceQA Accuracy : {scienceqa_score:.2f}%")
 print("="*55)
 
 summary = {
-    "vqav2_accuracy":   vqa_score,
+    "vqav2_accuracy":    vqa_score,
     "pope_avg_accuracy": sum(m["accuracy"] for m in pope_results.values()) / 3 if pope_results else None,
     "pope_avg_f1":       sum(m["f1"]       for m in pope_results.values()) / 3 if pope_results else None,
     "mme_total":         total_mme if mme_results else None,
+    "textvqa_accuracy":  textvqa_score,
+    "scienceqa_accuracy": scienceqa_score,
 }
 with open(os.path.join(args.output_dir, "summary.json"), "w") as f:
     json.dump(summary, f, indent=2)
