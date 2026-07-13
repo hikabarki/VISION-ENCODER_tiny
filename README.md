@@ -1,8 +1,43 @@
-# Keural Vision Encoder
+<div align="center">
 
-Keural vision encoder designed for the LLM era. Plug-in compatible with any LLM via a clean output contract.
+# 👁️ Keural Vision Encoder
+
+**Content-adaptive vision encoding for the LLM era — a 24.7M-parameter encoder trained _from scratch_, plug-in compatible with any LLM via a clean output contract.**
+
+<p>
+  <img src="https://img.shields.io/badge/status-V0.1_preview-16a34a?style=for-the-badge" alt="Status">
+  <img src="https://img.shields.io/badge/MKD_Co.,_Ltd.-Keural-6d28d9?style=for-the-badge" alt="MKD">
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License">
+  <img src="https://img.shields.io/badge/Python-3.10-3776ab?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/PyTorch-2.x-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/encoder-24.7M-8b5cf6" alt="Params">
+  <a href="https://huggingface.co/mkd-hika/keural-vlm-poc"><img src="https://img.shields.io/badge/🤗_Models-keural--vlm--poc-fcd34d" alt="HF"></a>
+</p>
+
+<br>
+
+<img src="project_plan/keural_vision_encoder.gif" alt="Keural VLM architecture animation" width="98%">
+
+<br>
+
+*Image → CNN Stem → Adaptive Token Budget → Spatial Transformer → LevelAware Projector → Mistral-7B → Answer*
+
+</div>
 
 > **Status: V0.1-preview.** Architecture is complete and validated by 300+ unit tests. Full training runs on CC3M + CC12M (~6.9M samples) on a single RTX 5090 in 24–36 hours.
+
+---
+
+## 📑 Contents
+
+- [VLM Pipeline Architecture](#vlm-pipeline-architecture)
+- [Benchmark Results](#benchmark-results)
+- [What Makes This Different](#what-makes-this-different)
+- [Prerequisites](#prerequisites)
+- [License](#license) · [Citation](#citation)
 
 ---
 
